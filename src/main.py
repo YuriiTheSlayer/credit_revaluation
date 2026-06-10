@@ -1,7 +1,7 @@
 """Точка входа Payment Terms Dashboard (pywebview + JS-фронтенд).
 
 Запуск из исходников:  python src/main.py
-Сборка exe:            pyinstaller build/app.spec
+Сборка exe:            pyinstaller build/app.spec --clean --noconfirm
 
 Окно — нативный WebView ОС (на Windows — Edge WebView2), фронтенд —
 локальные HTML/CSS/JS из ``webui/assets`` без внешних зависимостей и сети.
@@ -19,6 +19,7 @@ if str(_SRC) not in sys.path:
 import webview  # noqa: E402
 
 from core import brand  # noqa: E402
+from core.version import __version__  # noqa: E402
 from webui.api import Api  # noqa: E402
 
 
@@ -31,10 +32,21 @@ def index_path() -> Path:
     return candidate
 
 
+def _fatal(message: str) -> None:
+    """Показывает ошибку пользователю (exe собран без консоли)."""
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            None, message, f"{brand.APP_TITLE} v{__version__}", 0x10)
+    else:
+        print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
 def main() -> None:
     api = Api()
     window = webview.create_window(
-        f"{brand.APP_TITLE} — Comfy vs конкуренты",
+        f"{brand.APP_TITLE} — Comfy vs конкуренты · v{__version__}",
         url=str(index_path()),
         js_api=api,
         width=1320,
@@ -43,7 +55,22 @@ def main() -> None:
         background_color=brand.BG,
     )
     api.attach_window(window)
-    webview.start()
+    kwargs = {}
+    if sys.platform == "win32":
+        # только современный движок: без тихого фолбэка на старый MSHTML (IE),
+        # который ломает оформление
+        kwargs["gui"] = "edgechromium"
+    try:
+        webview.start(**kwargs)
+    except Exception as exc:  # noqa: BLE001 — показываем понятную причину
+        _fatal(
+            "Не удалось открыть окно приложения.\n\n"
+            "Скорее всего, не установлен Microsoft Edge WebView2 Runtime "
+            "(на Windows 11 и обновлённых Windows 10 он уже есть). "
+            "Установите бесплатный «Evergreen Bootstrapper» со страницы "
+            "Microsoft «WebView2 Runtime» и запустите приложение снова.\n\n"
+            f"Техническая причина: {exc}"
+        )
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ def test_boot_before_load(tmp_path):
     snap = a.boot()
     assert snap["loaded"] is False
     assert snap["table"] is None and snap["kpi"] == []
+    assert snap["version"]                     # версия видна в шапке UI
     json.dumps(snap, allow_nan=False)          # снапшот строго JSON-чистый
 
 

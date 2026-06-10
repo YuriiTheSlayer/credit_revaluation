@@ -305,13 +305,25 @@ python -m pytest
 
 ```bash
 pip install -r requirements-dev.txt
-pyinstaller build/app.spec --noconfirm   # → dist/PaymentTermsDashboard.exe
+pyinstaller build/app.spec --clean --noconfirm   # → dist/PaymentTermsDashboard.exe
 ```
 
 Окно приложения — системный Edge WebView2 (предустановлен на Windows 11 и
 обновлённых Windows 10; иначе ставится бесплатным Evergreen-инсталлятором
-Microsoft). Exe запускается двойным кликом, интернет и права администратора
-не нужны.
+Microsoft — приложение само сообщит об этом при запуске). Exe запускается
+двойным кликом, интернет и права администратора не нужны.
+
+**Если после обновления exe выглядит «по-старому»** — запущен старый
+артефакт сборки, а не новый код:
+
+1. обновите зависимости: `pip install -r requirements-dev.txt`
+   (флаг `--clean` выше также сбрасывает кэш PyInstaller);
+2. пересоберите и убедитесь, что сборка завершилась без ошибок;
+3. запускайте свежий `dist/PaymentTermsDashboard.exe` (проверьте дату
+   изменения файла и удалите старые копии с рабочего стола).
+
+Какая версия запущена — видно в заголовке окна и в подзаголовке шапки
+(например, `v2.0.0`, см. `src/core/version.py`).
 
 ### 10.4. Принятые решения и отличия от эталона
 

@@ -30,6 +30,7 @@ from core.mapping import (
     guess_reduced_bank,
 )
 from core.model import ALL_BANKS, Dataset, Filters, PAY_COMFY, pay_col
+from core.version import __version__
 from export.excel import default_filename, export_report
 from parsers.competitors import parse_competitors_csv
 from parsers.sales import parse_sales
@@ -340,6 +341,7 @@ class Api:
             },
             "appTitle": brand.APP_TITLE,
             "appSubtitle": brand.APP_SUBTITLE,
+            "version": __version__,
         }
         if self.dataset is None:
             base.update({

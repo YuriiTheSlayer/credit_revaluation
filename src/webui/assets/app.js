@@ -54,7 +54,8 @@ function render() {
   if (!S) return;
   applyTokens(S.brandTokens);
   $("#appTitle").textContent = S.appTitle;
-  $("#appSubtitle").textContent = S.appSubtitle;
+  $("#appSubtitle").textContent =
+    S.appSubtitle + (S.version ? " · v" + S.version : "");
 
   const stC = $("#statusCompetitors");
   if (S.statuses.competitors) { stC.textContent = "Конкуренты: " + S.statuses.competitors; stC.classList.add("ok"); }
