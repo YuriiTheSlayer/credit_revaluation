@@ -28,7 +28,7 @@ import pandas as pd
 import xlsxwriter
 from xlsxwriter.utility import xl_col_to_name
 
-from core import metrics
+from core import brand, metrics
 from core.mapping import ComfyMapping
 from core.model import PAY_COMFY, pay_col
 
@@ -59,16 +59,17 @@ def _sheet_name(base: str, bank: str | None, used: set[str]) -> str:
 
 
 class _Formats:
+    """Форматы в корпоративной палитре Comfy (см. ``core/brand.py``)."""
+
     def __init__(self, wb: xlsxwriter.Workbook):
-        self.title = wb.add_format({"italic": True, "font_color": "#595959"})
-        self.header = wb.add_format({
-            "bold": True, "bg_color": "#DDEBF7", "border": 1,
-            "text_wrap": True, "valign": "vcenter", "align": "center",
-        })
-        self.header_left = wb.add_format({
-            "bold": True, "bg_color": "#DDEBF7", "border": 1,
+        header_style = {
+            "bold": True, "bg_color": brand.GREEN, "font_color": "#FFFFFF",
+            "border": 1, "border_color": brand.GREEN_DARK,
             "text_wrap": True, "valign": "vcenter",
-        })
+        }
+        self.title = wb.add_format({"italic": True, "font_color": "#595959"})
+        self.header = wb.add_format({**header_style, "align": "center"})
+        self.header_left = wb.add_format(header_style)
         self.text = wb.add_format({})
         self.int = wb.add_format({"num_format": "0"})
         self.number = wb.add_format({"num_format": "General"})
@@ -77,14 +78,17 @@ class _Formats:
         self.percent = wb.add_format({"num_format": "0.0%"})
         self.term = wb.add_format({"num_format": "0.00"})
         self.share = wb.add_format({"num_format": "0%"})
-        self.bold_text = wb.add_format({"bold": True})
-        self.bold_value = wb.add_format({"bold": True, "num_format": "#,##0"})
-        self.bold_int = wb.add_format({"bold": True, "num_format": "0"})
-        self.bold_term = wb.add_format({"bold": True, "num_format": "0.00"})
-        self.bold_share = wb.add_format({"bold": True, "num_format": "0%"})
-        self.cf_bad = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
-        self.cf_good = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
-        self.cf_band = wb.add_format({"bg_color": "#F4F7FB"})
+        total_style = {"bold": True, "bg_color": brand.GREEN_TINT}
+        self.bold_text = wb.add_format(total_style)
+        self.bold_value = wb.add_format({**total_style, "num_format": "#,##0"})
+        self.bold_int = wb.add_format({**total_style, "num_format": "0"})
+        self.bold_term = wb.add_format({**total_style, "num_format": "0.00"})
+        self.bold_share = wb.add_format({**total_style, "num_format": "0%"})
+        self.cf_bad = wb.add_format({"bg_color": brand.RED_TINT,
+                                     "font_color": "#9C0006"})
+        self.cf_good = wb.add_format({"bg_color": brand.GREEN_TINT,
+                                      "font_color": brand.GREEN_DARK})
+        self.cf_band = wb.add_format({"bg_color": brand.GREEN_ZEBRA})
 
 
 @dataclass

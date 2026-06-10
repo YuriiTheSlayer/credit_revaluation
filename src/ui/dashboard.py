@@ -13,7 +13,7 @@ from pathlib import Path
 import flet as ft
 import pandas as pd
 
-from core import metrics
+from core import brand, metrics
 from core.mapping import ComfyMapping, guess_reduced_bank
 from core.model import ALL_BANKS, Dataset, Filters, PAY_COMFY, pay_col
 from export.excel import default_filename, export_report
@@ -28,10 +28,12 @@ class Dashboard:
 
     def __init__(self, page: ft.Page):
         self.page = page
-        page.title = "Payment Terms Dashboard — Comfy vs конкуренты"
+        page.title = f"{brand.APP_TITLE} — Comfy vs конкуренты"
         page.padding = 16
         page.scroll = ft.ScrollMode.AUTO
         page.theme_mode = ft.ThemeMode.LIGHT
+        page.theme = w.build_theme()
+        page.bgcolor = brand.BG
 
         # --- состояние -----------------------------------------------------
         self.dataset: Dataset | None = None
@@ -83,8 +85,8 @@ class Dashboard:
         )
         self.mapping_badge = ft.Container(
             content=ft.Text("", size=11, weight=ft.FontWeight.W_600,
-                            color=ft.Colors.BROWN_800),
-            bgcolor=ft.Colors.AMBER_100, padding=ft.padding.symmetric(4, 8),
+                            color=brand.ORANGE),
+            bgcolor=brand.ORANGE_TINT, padding=ft.padding.symmetric(4, 8),
             border_radius=6, visible=False,
         )
 
@@ -118,8 +120,10 @@ class Dashboard:
 
         self.table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text("—"))], rows=[],
-            heading_row_color=ft.Colors.BLUE_50, column_spacing=18,
+            heading_row_color=brand.GREEN_TINT, column_spacing=18,
             data_row_min_height=34, data_row_max_height=40, visible=False,
+            border=ft.border.all(1, brand.OUTLINE), border_radius=10,
+            bgcolor=brand.SURFACE,
         )
         self.table_pager = ft.Row(
             [
@@ -153,6 +157,7 @@ class Dashboard:
         )
 
         page.add(
+            w.brand_header(),
             ft.Row([self.zone_competitors, self.zone_sales], spacing=12),
             self.progress,
             ft.Row(
@@ -188,8 +193,8 @@ class Dashboard:
 
     def _toast(self, message: str, error: bool = False) -> None:
         self.page.open(ft.SnackBar(
-            ft.Text(message),
-            bgcolor=ft.Colors.RED_100 if error else None,
+            ft.Text(message, color=brand.RED if error else None),
+            bgcolor=brand.RED_TINT if error else None,
         ))
 
     def _error_dialog(self, title: str, message: str) -> None:
@@ -415,7 +420,7 @@ class Dashboard:
             w.kpi_card("SKU в выборке", f"{len(filtered)}",
                        f"банк: {self.bank} · {self.filters.describe()}"),
             w.kpi_card("Comfy: средний срок", w.fmt_num(comfy), comfy_note,
-                       value_color=w.ACCENT),
+                       value_color=w.GOOD, accent=True),
         ]
         for domain, disp in names.items():
             avg = overall.get(pay_col(domain), float("nan"))

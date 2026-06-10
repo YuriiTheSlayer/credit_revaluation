@@ -1,4 +1,6 @@
-"""Переиспользуемые элементы интерфейса: KPI-карточки, мультивыбор, зоны загрузки."""
+"""Переиспользуемые элементы интерфейса в корпоративном стиле Comfy:
+тема приложения, шапка-«логотип», KPI-карточки, мультивыбор, зоны загрузки.
+"""
 
 from __future__ import annotations
 
@@ -6,17 +8,59 @@ from collections.abc import Callable
 
 import flet as ft
 
-ACCENT = ft.Colors.BLUE_700
-GOOD = ft.Colors.GREEN_700
-BAD = ft.Colors.RED_700
-MUTED = ft.Colors.GREY_600
+from core import brand
 
-#: палитра серий для графика «ритейлеры»
-SERIES_COLORS = [
-    ft.Colors.BLUE_600, ft.Colors.ORANGE_600, ft.Colors.GREEN_600,
-    ft.Colors.PURPLE_600, ft.Colors.TEAL_600, ft.Colors.PINK_600,
-    ft.Colors.BROWN_600, ft.Colors.INDIGO_600,
-]
+ACCENT = brand.GREEN
+GOOD = brand.GREEN_DARK
+BAD = brand.RED
+MUTED = brand.MUTED
+
+#: палитра серий для графика «ритейлеры» (Comfy — фирменный зелёный, первым)
+SERIES_COLORS = brand.SERIES
+
+
+def build_theme() -> ft.Theme:
+    """Тема Material 3 на фирменном зелёном Comfy."""
+    return ft.Theme(
+        color_scheme_seed=brand.GREEN,
+        color_scheme=ft.ColorScheme(
+            primary=brand.GREEN,
+            on_primary="#FFFFFF",
+            primary_container=brand.GREEN_TINT,
+            on_primary_container=brand.GREEN_DARK,
+            secondary=brand.ORANGE,
+            surface=brand.SURFACE,
+        ),
+        use_material3=True,
+    )
+
+
+def brand_header() -> ft.Container:
+    """Шапка приложения: словесный знак COMFY + название продукта."""
+    wordmark = ft.Container(
+        ft.Text("COMFY", size=16, weight=ft.FontWeight.W_800, color="#FFFFFF"),
+        bgcolor=brand.GREEN,
+        padding=ft.padding.symmetric(6, 14),
+        border_radius=8,
+    )
+    return ft.Container(
+        ft.Row(
+            [
+                wordmark,
+                ft.Column(
+                    [
+                        ft.Text(brand.APP_TITLE, size=15,
+                                weight=ft.FontWeight.W_700, color=brand.GRAPHITE),
+                        ft.Text(brand.APP_SUBTITLE, size=11, color=MUTED),
+                    ],
+                    spacing=0, tight=True,
+                ),
+            ],
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.padding.only(bottom=2),
+    )
 
 
 def fmt_num(value, digits: int = 2) -> str:
@@ -36,28 +80,29 @@ def fmt_money(value) -> str:
         import math
         if value is None or (isinstance(value, float) and math.isnan(value)):
             return "—"
-        return f"{float(value):,.0f}".replace(",", " ")
+        return f"{float(value):,.0f}".replace(",", " ")
     except (TypeError, ValueError):
         return "—"
 
 
 def kpi_card(title: str, value: str, subtitle: str = "",
-             value_color: str | None = None) -> ft.Container:
+             value_color: str | None = None, accent: bool = False) -> ft.Container:
+    """KPI-карточка; ``accent=True`` — фирменная зелёная подложка (для Comfy)."""
     return ft.Container(
         content=ft.Column(
             [
                 ft.Text(title, size=12, color=MUTED, weight=ft.FontWeight.W_500),
                 ft.Text(value, size=24, weight=ft.FontWeight.BOLD,
-                        color=value_color or ft.Colors.ON_SURFACE),
+                        color=value_color or brand.GRAPHITE),
                 ft.Text(subtitle, size=11, color=MUTED),
             ],
             spacing=2,
             tight=True,
         ),
         padding=ft.padding.symmetric(12, 16),
-        border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
-        border_radius=10,
-        bgcolor=ft.Colors.SURFACE,
+        border=ft.border.all(1, brand.GREEN if accent else brand.OUTLINE),
+        border_radius=12,
+        bgcolor=brand.GREEN_TINT if accent else brand.SURFACE,
     )
 
 
@@ -68,7 +113,8 @@ def upload_zone(title: str, hint: str, icon: str, on_click) -> tuple[ft.Containe
         content=ft.Column(
             [
                 ft.Icon(icon, size=28, color=ACCENT),
-                ft.Text(title, weight=ft.FontWeight.W_600, size=13),
+                ft.Text(title, weight=ft.FontWeight.W_600, size=13,
+                        color=brand.GRAPHITE),
                 status,
             ],
             spacing=4,
@@ -76,8 +122,9 @@ def upload_zone(title: str, hint: str, icon: str, on_click) -> tuple[ft.Containe
             tight=True,
         ),
         padding=14,
-        border=ft.border.all(2, ft.Colors.OUTLINE_VARIANT),
+        border=ft.border.all(2, brand.OUTLINE),
         border_radius=12,
+        bgcolor=brand.SURFACE,
         ink=True,
         on_click=on_click,
         expand=True,
