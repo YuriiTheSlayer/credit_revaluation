@@ -105,3 +105,29 @@ def test_export_frames_logic(dash, tmp_path):
     import openpyxl
     wb = openpyxl.load_workbook(out)
     assert len(wb.sheetnames) == 2 * (len(dash.dataset.banks) + 1)
+
+
+def test_mapping_applies_in_dashboard(dash):
+    from core.mapping import ComfyMapping
+
+    dash.mapping = ComfyMapping(bank="Monobank", table={10: 5, 7: 4, 18: 9})
+    dash._wide_cache.clear()
+    dash._sync_mapping_badge()
+    assert dash.mapping_badge.visible
+    assert "Monobank" in dash.mapping_badge.content.value
+
+    wide = dash._get_wide("Monobank")
+    row = wide[wide["sku"] == "20671"].iloc[0]
+    assert row["pay_comfy"] == 5 and row["dev_bank"] == -1
+    privat = dash._get_wide("ПриватБанк")
+    assert privat[privat["sku"] == "20671"].iloc[0]["pay_comfy"] == 10
+
+    dash._refresh()          # KPI/таблица пересчитываются без ошибок
+    assert dash.table.rows
+
+
+def test_mapping_dialog_builds(dash):
+    dash._open_mapping_dialog(None)
+    assert dash.page.opened, "диалог маппинга должен открыться"
+    dialog = dash.page.opened[-1]
+    assert "Маппинг" in dialog.title.value

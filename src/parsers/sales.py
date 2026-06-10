@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from parsers.competitors import decode_bytes, parse_number, _canon_sku
+from parsers.competitors import decode_bytes, parse_number, to_number_series, _canon_sku
 
 log = logging.getLogger(__name__)
 
@@ -43,9 +43,12 @@ class SalesData:
         return float(self.df["sales"].sum()) if len(self.df) else 0.0
 
 
+_DETECT_SAMPLE = 1000   # для определения колонок достаточно выборки
+
+
 def _looks_like_sku(values: pd.Series) -> float:
     """Доля значений, похожих на код товара (целое число из 3+ цифр)."""
-    s = values.dropna().astype(str).str.strip()
+    s = values.head(_DETECT_SAMPLE).dropna().astype(str).str.strip()
     s = s[s != ""]
     if s.empty:
         return 0.0
@@ -54,10 +57,10 @@ def _looks_like_sku(values: pd.Series) -> float:
 
 def _numeric_share(values: pd.Series) -> float:
     """Доля значений, разбираемых как число (с учётом «европейского» формата)."""
-    s = values.dropna()
+    s = values.head(_DETECT_SAMPLE).dropna()
     if s.empty:
         return 0.0
-    return float(pd.Series([parse_number(v) is not None for v in s]).mean())
+    return float(to_number_series(s).notna().mean())
 
 
 def _detect_columns(df: pd.DataFrame) -> tuple[object, object]:
@@ -149,8 +152,9 @@ def parse_sales(source: str | Path | bytes, source_name: str = "") -> SalesData:
 
     sku_col, sales_col = _detect_columns(table)
     df = pd.DataFrame({
-        "sku": table[sku_col].map(_canon_sku),
-        "sales": table[sales_col].map(parse_number),
+        "sku": table[sku_col].astype(str).str.strip()
+                            .str.replace(r"^(\d+)\.0$", r"\1", regex=True),
+        "sales": to_number_series(table[sales_col]),
     })
     df = df[df["sku"].astype(str).str.strip() != ""]
     bad = int(df["sales"].isna().sum())

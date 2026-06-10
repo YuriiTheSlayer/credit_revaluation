@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from core.mapping import ComfyMapping
 from parsers.competitors import CompetitorsData, competitor_display_name
 from parsers.sales import SalesData
 
@@ -69,8 +70,13 @@ class Dataset:
             )
         return replace(self, sales=sales, sales_warnings=warnings)
 
-    def wide(self, bank: str) -> pd.DataFrame:
-        """Широкая таблица по выбранному банку (или :data:`ALL_BANKS`)."""
+    def wide(self, bank: str, mapping: ComfyMapping | None = None) -> pd.DataFrame:
+        """Широкая таблица по выбранному банку (или :data:`ALL_BANKS`).
+
+        Если ``mapping`` задан и применяется к этому банку, платежи Comfy
+        (`pay_comfy`) пересчитываются через таблицу «макс. доступность →
+        доступность в банке»; «Все банки» и остальные банки не затрагиваются.
+        """
         long = self.comp.long
         sub = long if bank == ALL_BANKS else long[long["bank"] == bank]
 
@@ -92,7 +98,10 @@ class Dataset:
         pivot = pivot[[pay_col(c) for c in self.competitors]].astype("Float64")
 
         wide = attrs.join(pivot, how="left")
-        wide[PAY_COMFY] = wide["comfy_max"].astype("Float64")
+        if mapping is not None and mapping.applies_to(bank):
+            wide[PAY_COMFY] = mapping.apply(wide["comfy_max"])
+        else:
+            wide[PAY_COMFY] = wide["comfy_max"].astype("Float64")
 
         comp_cols = [pay_col(c) for c in self.competitors]
         if comp_cols:

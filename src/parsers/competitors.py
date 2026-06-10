@@ -139,6 +139,21 @@ def parse_fraction(value: object) -> float | None:
     return None if num is None else num / 100.0
 
 
+def to_number_series(s: pd.Series) -> pd.Series:
+    """Векторный аналог :func:`parse_number` для больших файлов (90k+ строк).
+
+    Минимум проходов по данным: одна regex-чистка (пробелы/NBSP/%), замена
+    десятичной запятой и ``to_numeric``; плейсхолдеры («-», «n/a», …) сами
+    превращаются в NaN на этапе коэрции.
+    """
+    cleaned = (
+        s.astype(str)
+        .str.replace(r"[\s\xa0%]+", "", regex=True)
+        .str.replace(",", ".", regex=False)
+    )
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
 def normalize_product_name(name: str, sku: str) -> str:
     """Отрезает хвост `;КодТовара` у названия товара, если он есть."""
     name = name.strip()
@@ -222,31 +237,45 @@ def parse_competitors_csv(
         warnings.append("Неизвестные колонки проигнорированы: " + ", ".join(unknown))
 
     n_cols = len(header)
-    rows: list[list[str]] = []
     bad_lines: list[int] = []
     skipped_service = 0
     sku_mismatches = 0
 
+    # Один проход по строкам: совпавшие с «двойной» структурой откладываем для
+    # пакетного разбора единым csv.reader (C-скорость), остальные — фолбэк.
+    records: list[list[str] | None] = []
+    inner_meta: list[tuple[int, int, str, str]] = []   # (поз., №строки, sku, name)
+    inners: list[str] = []
     for idx, line in enumerate(lines[1:], start=2):
+        m = _DATA_RE.match(line)
+        if m:
+            inner_meta.append((len(records), idx, m.group("sku"), m.group("name")))
+            inners.append(m.group("inner").replace('""', '"'))
+            records.append(None)
+            continue
         fields = _unfold_line(line, n_cols)
         if fields is None:
-            # не распознали — возможно служебная строка произвольной формы
-            probe = line.split(",")
-            if _is_service_row(probe):
+            if _is_service_row(line.split(",")):
                 skipped_service += 1
             else:
                 bad_lines.append(idx)
-            continue
-        if _is_service_row(fields):
+        elif _is_service_row(fields):
             skipped_service += 1
-            continue
-        # повтор кода товара во вложенном блоке должен совпадать с внешним
-        m = _DATA_RE.match(line)
-        if m:
-            inner_first = m.group("inner").replace('""', '"').split(",", 1)[0]
-            if inner_first.strip() != m.group("sku").strip():
+        else:
+            records.append(fields)
+
+    for (pos, idx, sku, name), fields in zip(inner_meta, csv.reader(inners)):
+        # внутренний блок = повтор КодТовара + все колонки после «Товар»
+        if len(fields) == n_cols - 1:
+            if fields[0].strip() != sku.strip():
                 sku_mismatches += 1
-        rows.append(fields)
+            records[pos] = [sku, name, *fields[1:]]
+        else:
+            bad_lines.append(idx)
+
+    # служебные строки не совпадают с _DATA_RE и отсеяны в фолбэк-ветке,
+    # поэтому здесь достаточно убрать нераспознанные
+    rows = [r for r in records if r is not None]
 
     if not rows:
         raise CompetitorsParseError(
@@ -254,6 +283,7 @@ def parse_competitors_csv(
             "не соответствует ожидаемому формату выгрузки по конкурентам."
         )
     if bad_lines:
+        bad_lines.sort()
         sample = ", ".join(map(str, bad_lines[:10]))
         warnings.append(
             f"Пропущено нераспознанных строк: {len(bad_lines)} (номера: {sample}"
@@ -270,25 +300,29 @@ def parse_competitors_csv(
     df = df[[c for c in header if c in COLUMN_MAP]].rename(columns=COLUMN_MAP)
     for col in COLUMN_MAP.values():
         if col not in df.columns:
-            df[col] = None
+            df[col] = ""
 
-    df["sku"] = df["sku"].map(_canon_sku)
-    df["name"] = [
-        normalize_product_name(n, s) for n, s in zip(df["name"].astype(str), df["sku"])
-    ]
+    # дальше — только векторные операции: на 90k+ строк поэлементные вызовы
+    # Python заметно медленнее
+    df["sku"] = df["sku"].str.strip().str.replace(r"^(\d+)\.0$", r"\1", regex=True)
+    # «Название;КодТовара» → отрезаем хвост, только если он равен коду строки
+    names = df["name"].str.strip()
+    parts = names.str.rsplit(";", n=1, expand=True)
+    if parts.shape[1] == 2:
+        tail_is_sku = parts[1].notna() & parts[1].eq(df["sku"])
+        names = parts[0].str.strip().where(tail_is_sku, names)
+    df["name"] = names
+
     for col in ("brand", "subcategory", "category", "business", "attr_rma",
                 "supplier_item", "stock_comfy", "stock_sp", "assort_type",
                 "assort_type_global", "bank", "competitor"):
-        df[col] = df[col].astype(str).str.strip().replace({"None": "", "nan": ""})
+        df[col] = df[col].str.strip()
 
     for col in _NUMERIC_FLOAT:
-        df[col] = df[col].map(parse_number).astype("Float64")
-    df["margin"] = df["margin"].map(parse_fraction).astype("Float64")
+        df[col] = to_number_series(df[col]).astype("Float64")
+    df["margin"] = (to_number_series(df["margin"]) / 100.0).astype("Float64")
     for col in _NUMERIC_INT:
-        df[col] = pd.array(
-            [None if (v := parse_number(x)) is None else round(v) for x in df[col]],
-            dtype="Int64",
-        )
+        df[col] = to_number_series(df[col]).round().astype("Int64")
 
     before = len(df)
     df = df[(df["sku"] != "") & (df["bank"] != "") & (df["competitor"] != "")]

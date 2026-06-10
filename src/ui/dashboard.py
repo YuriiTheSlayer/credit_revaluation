@@ -14,6 +14,7 @@ import flet as ft
 import pandas as pd
 
 from core import metrics
+from core.mapping import ComfyMapping, guess_reduced_bank
 from core.model import ALL_BANKS, Dataset, Filters, PAY_COMFY, pay_col
 from export.excel import default_filename, export_report
 from parsers.competitors import parse_competitors_csv
@@ -37,10 +38,11 @@ class Dashboard:
         self.bank: str | None = None
         self.weight_mode: str = "sales"          # 'sales' | 'price'
         self.filters = Filters()
+        self.mapping = ComfyMapping.load()       # маппинг доступности Comfy
         self.sort_field: str = "sku"
         self.sort_asc: bool = True
         self.table_page: int = 0
-        self._wide_cache: pd.DataFrame | None = None
+        self._wide_cache: dict[str, pd.DataFrame] = {}   # банк → широкая таблица
 
         # --- элементы ------------------------------------------------------
         self.pick_competitors = ft.FilePicker(on_result=self._competitors_picked)
@@ -73,6 +75,17 @@ class Dashboard:
                 ft.Segment(value="price", label=ft.Text("Веса: стоимость")),
             ],
             selected={"sales"}, on_change=self._weight_changed, visible=False,
+        )
+        self.mapping_btn = ft.OutlinedButton(
+            "Маппинг Comfy", icon=ft.Icons.TUNE,
+            on_click=self._open_mapping_dialog, disabled=True,
+            tooltip="Доступность Comfy в банке со сниженными условиями (Monobank)",
+        )
+        self.mapping_badge = ft.Container(
+            content=ft.Text("", size=11, weight=ft.FontWeight.W_600,
+                            color=ft.Colors.BROWN_800),
+            bgcolor=ft.Colors.AMBER_100, padding=ft.padding.symmetric(4, 8),
+            border_radius=6, visible=False,
         )
 
         self.f_business = w.MultiSelect(page, "Бизнес", self._filters_changed)
@@ -143,7 +156,8 @@ class Dashboard:
             ft.Row([self.zone_competitors, self.zone_sales], spacing=12),
             self.progress,
             ft.Row(
-                [self.bank_selector, self.weight_selector,
+                [self.bank_selector, self.weight_selector, self.mapping_btn,
+                 self.mapping_badge,
                  ft.Container(expand=True),
                  self.export_all_banks, self.export_btn],
                 wrap=True, spacing=10,
@@ -275,7 +289,18 @@ class Dashboard:
         self.search_field.disabled = False
         self.reset_filters_btn.disabled = False
         self.export_btn.disabled = False
+        self.mapping_btn.disabled = False
         self.empty_hint.visible = False
+
+        # маппинг Comfy: угадываем банк со сниженной доступностью, подтягиваем
+        # новые значения «макс. платежей» из файла
+        if self.mapping.bank is None:
+            self.mapping.bank = guess_reduced_bank(ds.banks)
+        comfy_values = sorted(
+            int(v) for v in long["comfy_max"].dropna().unique()
+        )
+        self.mapping.sync_values(comfy_values)
+        self._sync_mapping_badge()
 
         all_warnings = list(ds.comp.warnings) + list(ds.sales_warnings)
         self.warnings_tile.visible = bool(all_warnings)
@@ -284,7 +309,7 @@ class Dashboard:
             ft.ListTile(title=ft.Text(msg, size=12)) for msg in all_warnings
         ]
 
-        self._wide_cache = None
+        self._wide_cache.clear()
         self._refresh()
 
     # ----------------------------------------------------------------- события
@@ -292,7 +317,6 @@ class Dashboard:
         selected = next(iter(e.control.selected), None)
         if selected and selected != self.bank:
             self.bank = selected
-            self._wide_cache = None
             self.table_page = 0
             self._refresh()
             self.page.update()
@@ -355,12 +379,17 @@ class Dashboard:
         return handler
 
     # ------------------------------------------------------------------ расчёт
+    def _get_wide(self, bank: str) -> pd.DataFrame:
+        """Широкая таблица банка с кэшем (инвалидация — при смене данных/маппинга)."""
+        assert self.dataset is not None
+        if bank not in self._wide_cache:
+            self._wide_cache[bank] = self.dataset.wide(bank, self.mapping)
+        return self._wide_cache[bank]
+
     def _current_frames(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """(широкая таблица банка, отфильтрованная) с кэшем по банку."""
-        assert self.dataset is not None and self.bank is not None
-        if self._wide_cache is None:
-            self._wide_cache = self.dataset.wide(self.bank)
-        wide = self._wide_cache
+        """(широкая таблица банка, отфильтрованная)."""
+        assert self.bank is not None
+        wide = self._get_wide(self.bank)
         return wide, self.filters.apply(wide)
 
     def _refresh(self) -> None:
@@ -379,11 +408,13 @@ class Dashboard:
     def _refresh_kpi(self, filtered, value_col, names, pay_cols) -> None:
         overall = metrics.overall_terms(filtered, value_col, pay_cols)
         comfy = overall.get(PAY_COMFY, float("nan"))
+        comfy_note = "взвешено по " + ("продажам", "цене")[value_col == "price"]
+        if self.mapping.applies_to(self.bank):
+            comfy_note += f" · маппинг {self.mapping.bank}"
         cards = [
             w.kpi_card("SKU в выборке", f"{len(filtered)}",
                        f"банк: {self.bank} · {self.filters.describe()}"),
-            w.kpi_card("Comfy: средний срок", w.fmt_num(comfy),
-                       "взвешено по " + ("продажам", "цене")[value_col == "price"],
+            w.kpi_card("Comfy: средний срок", w.fmt_num(comfy), comfy_note,
                        value_color=w.ACCENT),
         ]
         for domain, disp in names.items():
@@ -557,6 +588,102 @@ class Dashboard:
             f"стр. {self.table_page + 1}/{pages}"
         )
 
+    # ----------------------------------------------------------- маппинг Comfy
+    def _sync_mapping_badge(self) -> None:
+        m = self.mapping
+        if m.is_active:
+            note = f"Маппинг Comfy → {m.bank}: изменено {m.changed_count}"
+            if self.dataset is not None and m.bank not in self.dataset.banks:
+                note += " (банк не найден в файле)"
+            self.mapping_badge.content.value = note
+            self.mapping_badge.visible = True
+        else:
+            self.mapping_badge.visible = False
+
+    def _open_mapping_dialog(self, _e) -> None:
+        if self.dataset is None:
+            self._toast("Сначала загрузите CSV конкурентов.", error=True)
+            return
+        ds = self.dataset
+        values = sorted(int(v) for v in ds.comp.long["comfy_max"].dropna().unique())
+        self.mapping.sync_values(values)
+
+        bank_dd = ft.Dropdown(
+            label="Банк со сниженной доступностью",
+            value=self.mapping.bank or guess_reduced_bank(ds.banks) or ds.banks[0],
+            options=[ft.dropdown.Option(b) for b in ds.banks],
+            width=300, dense=True,
+        )
+        fields: dict[int, ft.TextField] = {
+            v: ft.TextField(
+                value=str(self.mapping.table.get(v, v)), width=90, dense=True,
+                text_align=ft.TextAlign.RIGHT,
+                keyboard_type=ft.KeyboardType.NUMBER,
+            )
+            for v in values
+        }
+        rows = [
+            ft.Row(
+                [ft.Text(f"Макс. {v} платежей", width=150, size=13),
+                 ft.Icon(ft.Icons.ARROW_FORWARD, size=14, color=w.MUTED),
+                 fields[v]],
+                spacing=8,
+            )
+            for v in values
+        ]
+        hint = ft.Text(
+            "«Comfy. MAX платежей» в выгрузке — максимальная доступность "
+            "(уровень ПриватБанк/ПУМБ). Укажите, какая доступность Comfy "
+            "действует в выбранном банке: расчёты и экспорт в разрезе этого "
+            "банка будут использовать приведённые значения.",
+            size=12, color=w.MUTED,
+        )
+
+        def reset(_e) -> None:
+            for v, f in fields.items():
+                f.value = str(v)
+                f.update()
+
+        def save(_e) -> None:
+            try:
+                table = {v: int(str(f.value).strip()) for v, f in fields.items()}
+            except ValueError:
+                self._toast("Все значения маппинга должны быть целыми числами.",
+                            error=True)
+                return
+            if any(x < 0 for x in table.values()):
+                self._toast("Количество платежей не может быть отрицательным.",
+                            error=True)
+                return
+            self.mapping.bank = bank_dd.value
+            self.mapping.table = table
+            try:
+                self.mapping.save()
+            except OSError as exc:
+                self._toast(f"Маппинг применён, но не сохранён на диск: {exc}",
+                            error=True)
+            self._wide_cache.clear()
+            self._sync_mapping_badge()
+            self.page.close(dialog)
+            self._refresh()
+            self.page.update()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Маппинг доступности Comfy"),
+            content=ft.Container(
+                ft.Column([hint, bank_dd, ft.Divider(), *rows],
+                          scroll=ft.ScrollMode.AUTO, tight=True, spacing=10),
+                width=420, height=min(520, 220 + 46 * len(rows)),
+            ),
+            actions=[
+                ft.TextButton("Сбросить (1:1)", on_click=reset),
+                ft.TextButton("Отмена", on_click=lambda e: self.page.close(dialog)),
+                ft.FilledButton("Сохранить", on_click=save),
+            ],
+        )
+        self.page.open(dialog)
+
     # ------------------------------------------------------------------ экспорт
     def _export_clicked(self, _e) -> None:
         if self.dataset is None or self.bank is None:
@@ -582,13 +709,14 @@ class Dashboard:
             ds = self.dataset
             assert ds is not None
             banks = ds.banks + [ALL_BANKS] if self.export_all_banks.value else [self.bank]
-            frames = [(b, self.filters.apply(ds.wide(b))) for b in banks]
+            frames = [(b, self.filters.apply(self._get_wide(b))) for b in banks]
             if not path.lower().endswith(".xlsx"):
                 path += ".xlsx"
             export_report(
                 path, frames, ds.competitor_names(),
                 has_sales=ds.has_sales,
                 filters_desc=f"{self.filters.describe()}",
+                mapping=self.mapping,
             )
             self._toast(f"Отчёт сохранён: {Path(path).name}")
         except Exception as exc:  # noqa: BLE001

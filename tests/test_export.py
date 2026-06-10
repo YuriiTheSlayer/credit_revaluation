@@ -1,11 +1,12 @@
-"""Тесты экспорта: структура листов, формулы итогов, сверка с эталоном."""
+"""Тесты экспорта: «Сводка» + плоские «Данные», сверка итогов с эталоном."""
 
 import openpyxl
 import pandas as pd
 import pytest
 
+from core.mapping import ComfyMapping
 from core.model import ALL_BANKS, Dataset
-from export.excel import SHEET_PRICE, SHEET_SALES, default_filename, export_report
+from export.excel import SHEET_DATA, SHEET_SUMMARY, default_filename, export_report
 from parsers.competitors import parse_competitors_csv
 from parsers.sales import parse_sales
 from test_metrics import load_reference_sales
@@ -28,6 +29,7 @@ def _reference_wide(example_xlsx_path) -> pd.DataFrame:
     for col, value in ATTR_DEFAULTS.items():
         df[col] = value
     comp_cols = [f"pay::{d}" for d in REF_NAMES]
+    df["comfy_max"] = df["pay_comfy"]
     df["comp_max_bank"] = df[comp_cols].max(axis=1)
     df["dev_bank"] = df["pay_comfy"] - df["comp_max_bank"]
     return df
@@ -38,12 +40,9 @@ def dataset(kniga_path, sales_path) -> Dataset:
     return Dataset(parse_competitors_csv(kniga_path)).attach_sales(parse_sales(sales_path))
 
 
-def _find_label_cell(ws, label):
-    for row in ws.iter_rows():
-        for cell in row:
-            if cell.value == label:
-                return cell
-    return None
+def _headers(ws, row=2) -> dict[str, int]:
+    """заголовок → номер колонки (1-based) для строки заголовков."""
+    return {str(c.value): c.column for c in ws[row] if c.value is not None}
 
 
 def test_default_filename():
@@ -52,77 +51,96 @@ def test_default_filename():
     assert name == "report_Monobank_2026-06-10.xlsx"
 
 
-def test_reference_data_roundtrip(tmp_path, example_xlsx_path):
-    """Экспорт данных эталона воспроизводит его итоги (±0.01) и структуру."""
+def test_reference_totals_on_summary_sheet(tmp_path, example_xlsx_path):
+    """Критерий приёмки: итоги «Сводки» совпадают с эталоном до 0.01."""
     wide = _reference_wide(example_xlsx_path)
     out = tmp_path / "ref.xlsx"
     export_report(out, [("Monobank", wide)], REF_NAMES, has_sales=True)
 
-    wb = openpyxl.load_workbook(out, data_only=True)
-    assert wb.sheetnames == [SHEET_SALES, SHEET_PRICE]
-    ws = wb[SHEET_SALES]
+    wb = openpyxl.load_workbook(out)
+    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_DATA]
+    ws = wb[SHEET_SUMMARY]
+    heads = _headers(ws)
 
-    # подписи ритейлеров под итогами
-    comfy_label = _find_label_cell(ws, "Comfy")
-    assert comfy_label is not None
-    for disp in REF_NAMES.values():
-        assert _find_label_cell(ws, disp) is not None
+    # строка 3 — «Вся выборка», строка 4 — категория «Смартфон»
+    assert ws.cell(row=3, column=1).value == "Вся выборка"
+    assert ws.cell(row=4, column=1).value == "Смартфон"
 
-    # итог Comfy — в той же колонке строкой выше подписи; сверка с эталоном
-    totals_row = comfy_label.row - 1
-    comfy_total = ws.cell(row=totals_row, column=comfy_label.column).value
-    assert comfy_total == pytest.approx(16.41, abs=0.01)
-    fox_label = _find_label_cell(ws, "Foxtrot")
-    assert ws.cell(row=totals_row, column=fox_label.column).value == pytest.approx(14.49, abs=0.01)
-    roz_label = _find_label_cell(ws, "Rozetka")
-    assert ws.cell(row=totals_row, column=roz_label.column).value == pytest.approx(15.46, abs=0.01)
-    epi_label = _find_label_cell(ws, "Epicentr")
-    assert ws.cell(row=totals_row, column=epi_label.column).value == pytest.approx(14.60, abs=0.01)
+    expectations_sales = {
+        "Comfy": 16.41, "Foxtrot": 14.49, "Rozetka": 15.46, "Epicentr": 14.60,
+    }
+    expectations_price = {
+        "Comfy": 16.28, "Foxtrot": 13.46, "Rozetka": 15.12, "Epicentr": 14.00,
+    }
+    for disp, expected in expectations_sales.items():
+        col = heads[f"{disp}\nвеса: продажи"]
+        assert ws.cell(row=4, column=col).value == pytest.approx(expected, abs=0.01)
+    for disp, expected in expectations_price.items():
+        col = heads[f"{disp}\nвеса: стоимость"]
+        assert ws.cell(row=4, column=col).value == pytest.approx(expected, abs=0.01)
 
-    # живые формулы: структура и SUMPRODUCT
-    wb_f = openpyxl.load_workbook(out, data_only=False)
-    ws_f = wb_f[SHEET_SALES]
-    headers = {c.value: c.column for c in ws_f[2]}
-    structure_col = headers["Структура"]
-    first_structure = ws_f.cell(row=3, column=structure_col).value
-    assert isinstance(first_structure, str) and first_structure.startswith("=")
-    assert "/" in first_structure
-    comfy_formula = ws_f.cell(row=totals_row, column=comfy_label.column).value
-    assert isinstance(comfy_formula, str) and comfy_formula.startswith("=SUMPRODUCT(")
-    total_sales_formula = ws_f.cell(row=totals_row, column=headers["Продажи"]).value
-    assert total_sales_formula.startswith("=SUM(")
+    # количество SKU и продажи категории
+    assert ws.cell(row=4, column=heads["SKU, шт"]).value == 36
+    assert ws.cell(row=4, column=heads["Продажи, грн"]).value == pytest.approx(72128373)
+
+    # доля Comfy ≥ конкурентов в диапазоне [0; 1]
+    share = ws.cell(row=3, column=heads["Comfy ≥ конкурентов"]).value
+    assert 0 <= share <= 1
 
 
-def test_export_structure_from_fixtures(tmp_path, dataset):
-    """Сквозной сценарий: Книга31 + продажи → экспорт → проверка структуры."""
+def test_data_sheet_is_flat_and_filterable(tmp_path, example_xlsx_path):
+    """Плоская таблица: без промежуточных итогов, автофильтр на весь диапазон."""
+    wide = _reference_wide(example_xlsx_path)
+    out = tmp_path / "ref.xlsx"
+    export_report(out, [("Monobank", wide)], REF_NAMES, has_sales=True)
+
+    ws = openpyxl.load_workbook(out)[SHEET_DATA]
+    heads = _headers(ws)
+    assert "Monobank" in str(ws["A1"].value)
+
+    n = len(wide)
+    sku_values = [ws.cell(row=2 + i, column=heads["КодТовара"]).value
+                  for i in range(1, n + 1)]
+    assert all(v is not None for v in sku_values)         # непрерывный диапазон
+    assert ws.cell(row=2 + n + 1, column=1).value is None  # и ничего после него
+
+    last_col = ws.cell(row=2, column=len(heads)).column_letter
+    assert ws.auto_filter.ref == f"A2:{last_col}{n + 2}"   # фильтр по категории работает
+    assert ws.freeze_panes == "C3"
+    assert len(list(ws.conditional_formatting)) >= 2       # зебра + откл.
+
+    # структура первой строки данных = продажи / сумма по категории
+    first_sales = ws.cell(row=3, column=heads["Продажи"]).value
+    total = wide["sales"].sum()
+    structure = ws.cell(row=3, column=heads["Структура (продажи)"]).value
+    assert structure == pytest.approx(first_sales / total, rel=1e-6)
+
+    # обе колонки структуры и платежи конкурентов на месте
+    for h in ("Структура (стоимость)", "Платежей Comfy", "Платежей Foxtrot",
+              "Откл. Comfy − конк.", "Comfy MAX (файл)"):
+        assert h in heads, h
+
+
+def test_export_from_fixtures_structure(tmp_path, dataset):
     bank = "Monobank"
     wide = dataset.wide(bank)
     out = tmp_path / "report.xlsx"
-    export_report(
-        out, [(bank, wide)], dataset.competitor_names(),
-        has_sales=True, filters_desc="без фильтров",
-    )
+    export_report(out, [(bank, wide)], dataset.competitor_names(), has_sales=True)
 
     wb = openpyxl.load_workbook(out)
-    assert wb.sheetnames == [SHEET_SALES, SHEET_PRICE]
-    for sheet in wb.sheetnames:
-        ws = wb[sheet]
-        assert bank in str(ws["A1"].value)              # банк в шапке
-        assert ws.freeze_panes == "C3"                  # заморозка шапки
-        assert ws.auto_filter.ref is not None           # автофильтр
-        headers = [c.value for c in ws[2]]
-        assert "КодТовара" in headers and "Структура" in headers
-        assert "Кол-во Платежей Foxtrot" in headers
-        assert "Кол-во Платежей Rozetka" in headers
-        assert len(list(ws.conditional_formatting)) > 0   # подсветка отклонений
-    assert "Продажи" in [c.value for c in wb[SHEET_SALES][2]]
-    assert "Продажи" not in [c.value for c in wb[SHEET_PRICE][2]]
+    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_DATA]
 
-    # у каждой категории своя итоговая строка с подписью Comfy
-    ws = wb[SHEET_SALES]
-    comfy_labels = [c for row in ws.iter_rows() for c in row if c.value == "Comfy"]
+    summary = wb[SHEET_SUMMARY]
     n_categories = wide["category"].nunique()
-    assert len(comfy_labels) == n_categories
+    labels = [summary.cell(row=r, column=1).value for r in range(3, 4 + n_categories)]
+    assert labels[0] == "Вся выборка"
+    assert len([v for v in labels if v]) == n_categories + 1
+
+    data = wb[SHEET_DATA]
+    heads = _headers(data)
+    skus = {str(data.cell(row=2 + i, column=heads["КодТовара"]).value)
+            for i in range(1, len(wide) + 1)}
+    assert len(skus) == 12
 
 
 def test_multibank_export_sheet_names(tmp_path, dataset):
@@ -136,12 +154,39 @@ def test_multibank_export_sheet_names(tmp_path, dataset):
     assert any("ПУМБ" in n for n in wb.sheetnames)
 
 
-def test_export_without_sales_only_price_sheet(tmp_path, dataset):
+def test_export_without_sales_hides_sales_columns(tmp_path, dataset):
     wide = dataset.wide("ПУМБ")
     out = tmp_path / "no_sales.xlsx"
     export_report(out, [("ПУМБ", wide)], dataset.competitor_names(), has_sales=False)
     wb = openpyxl.load_workbook(out)
-    assert wb.sheetnames == [SHEET_PRICE]
+    data_heads = _headers(wb[SHEET_DATA])
+    assert "Продажи" not in data_heads
+    assert "Структура (продажи)" not in data_heads
+    assert "Структура (стоимость)" in data_heads
+    summary_heads = _headers(wb[SHEET_SUMMARY])
+    assert "Продажи, грн" not in summary_heads
+    assert not any("веса: продажи" in h for h in summary_heads)
+    assert any("веса: стоимость" in h for h in summary_heads)
+
+
+def test_mapping_reflected_in_export(tmp_path, kniga_path):
+    dataset = Dataset(parse_competitors_csv(kniga_path))
+    mapping = ComfyMapping(bank="Monobank", table={10: 5, 7: 4, 18: 9})
+    wide = dataset.wide("Monobank", mapping)
+    out = tmp_path / "mapped.xlsx"
+    export_report(out, [("Monobank", wide)], dataset.competitor_names(),
+                  has_sales=False, mapping=mapping)
+
+    ws = openpyxl.load_workbook(out)[SHEET_DATA]
+    assert "Маппинг Comfy активен" in str(ws["A1"].value)
+    heads = _headers(ws)
+    rows = {str(ws.cell(row=r, column=heads["КодТовара"]).value): r
+            for r in range(3, 3 + 12)}
+    r = rows["20671"]
+    assert ws.cell(row=r, column=heads["Платежей Comfy"]).value == 5      # 10 → 5
+    assert ws.cell(row=r, column=heads["Comfy MAX (файл)"]).value == 10   # исходное
+    # Monobank foxtrot = 6 → откл. = 5 − 6 = −1
+    assert ws.cell(row=r, column=heads["Откл. Comfy − конк."]).value == -1
 
 
 def test_export_empty_frame_writes_stub(tmp_path, dataset):
@@ -149,5 +194,5 @@ def test_export_empty_frame_writes_stub(tmp_path, dataset):
     out = tmp_path / "empty.xlsx"
     export_report(out, [("Monobank", wide)], dataset.competitor_names(), has_sales=True)
     wb = openpyxl.load_workbook(out)
-    ws = wb[SHEET_SALES]
-    assert "Нет данных" in str(ws["A3"].value)
+    assert "Нет данных" in str(wb[SHEET_DATA]["A3"].value)
+    assert "Нет данных" in str(wb[SHEET_SUMMARY]["A3"].value)
