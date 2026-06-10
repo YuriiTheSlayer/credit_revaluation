@@ -1,9 +1,9 @@
-"""Тесты маппинга доступности Comfy (макс. доступность → доступность в банке)."""
+"""Тесты ручных корректировок: маппинг Comfy и доступность бренда (Apple)."""
 
 import pandas as pd
 import pytest
 
-from core.mapping import ComfyMapping, guess_reduced_bank
+from core.mapping import BrandOverride, ComfyMapping, guess_reduced_bank
 from core.model import ALL_BANKS, Dataset
 from parsers.competitors import parse_competitors_csv
 
@@ -75,3 +75,71 @@ def test_dataset_wide_applies_mapping_only_to_target_bank(kniga_path):
 
     all_banks = ds.wide(ALL_BANKS, mapping).set_index("sku")
     assert all_banks.loc["20671", "pay_comfy"] == 10    # «Все банки» = макс. доступность
+
+
+# ---------------------------------------------------------------------------
+# доступность бренда (Apple): платежи Comfy по банкам поверх CSV
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def dataset(kniga_path) -> Dataset:
+    return Dataset(parse_competitors_csv(kniga_path))
+
+
+def test_brand_override_rewrites_bank_values(dataset):
+    # в фикстуре нет Apple — используем Thomas (бренд настраивается)
+    override = BrandOverride(brand="Thomas", per_bank={"Monobank": 3})
+    mono = dataset.wide("Monobank", brand_override=override).set_index("sku")
+    for sku in ("20671", "20676", "901657"):            # все SKU Thomas
+        assert mono.loc[sku, "pay_comfy"] == 3
+    assert mono.loc["20671", "dev_bank"] == -3          # 3 − foxtrot(6)
+    assert mono.loc["20671", "comfy_max"] == 10         # CSV-поле не трогаем
+    assert mono.loc["502865", "pay_comfy"] == 7         # чужой бренд — без изменений
+
+    privat = dataset.wide("ПриватБанк", brand_override=override).set_index("sku")
+    assert privat.loc["20671", "pay_comfy"] == 10       # банк без записи — из CSV
+
+
+def test_brand_override_all_banks_takes_max(dataset):
+    partial = BrandOverride(brand="Thomas", per_bank={"Monobank": 3})
+    wide = dataset.wide(ALL_BANKS, brand_override=partial).set_index("sku")
+    assert wide.loc["20671", "pay_comfy"] == 10         # max(CSV 10, override 3)
+
+    full = BrandOverride(
+        brand="Thomas", per_bank={"Monobank": 3, "ПриватБанк": 4, "ПУМБ": 5})
+    wide = dataset.wide(ALL_BANKS, brand_override=full).set_index("sku")
+    assert wide.loc["20671", "pay_comfy"] == 5          # max по переопределениям
+
+
+def test_brand_override_beats_mapping(dataset):
+    mapping = ComfyMapping(bank="Monobank", table={10: 5, 7: 4, 18: 9})
+    override = BrandOverride(brand="Thomas", per_bank={"Monobank": 12})
+    mono = dataset.wide("Monobank", mapping, brand_override=override).set_index("sku")
+    assert mono.loc["20671", "pay_comfy"] == 12         # бренд приоритетнее маппинга
+    assert mono.loc["922532", "pay_comfy"] == 5         # не-Thomas: сработал маппинг
+
+
+def test_brand_override_case_insensitive(dataset):
+    override = BrandOverride(brand="thomas", per_bank={"Monobank": 3})
+    mono = dataset.wide("Monobank", brand_override=override).set_index("sku")
+    assert mono.loc["20671", "pay_comfy"] == 3
+
+
+def test_brand_override_inactive_without_values():
+    assert not BrandOverride(brand="Apple", per_bank={}).is_active
+    assert BrandOverride(brand="Apple", per_bank={"Monobank": 6}).is_active
+
+
+def test_brand_override_save_load_roundtrip(tmp_path):
+    path = tmp_path / "cfg" / "apple.json"
+    src = BrandOverride(brand="Apple", per_bank={"Monobank": 6, "ПУМБ": 12})
+    src.save(path)
+    loaded = BrandOverride.load(path)
+    assert loaded.brand == "Apple"
+    assert loaded.per_bank == {"Monobank": 6, "ПУМБ": 12}
+    assert BrandOverride.load(tmp_path / "nope.json").per_bank == {}
+
+
+def test_brand_override_describe():
+    text = BrandOverride(brand="Apple", per_bank={"Monobank": 6}).describe()
+    assert "Apple" in text and "Monobank: 6" in text

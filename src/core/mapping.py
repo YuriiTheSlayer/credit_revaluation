@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path.home() / ".payment_terms_dashboard"
 MAPPING_FILE = CONFIG_DIR / "comfy_mapping.json"
+BRAND_OVERRIDE_FILE = CONFIG_DIR / "brand_override.json"
 
 
 @dataclass
@@ -87,3 +88,57 @@ def guess_reduced_bank(banks: list[str]) -> str | None:
         if "mono" in bank.lower():
             return bank
     return None
+
+
+@dataclass
+class BrandOverride:
+    """Ручная доступность Comfy для товаров бренда (обычно Apple) по банкам.
+
+    На технику Apple действуют особые условия рассрочки, и значение
+    «Comfy. MAX платежей» из выгрузки для неё неверно. ``per_bank`` задаёт
+    фактическое кол-во платежей Comfy в каждом банке; банк без записи
+    продолжает использовать значение из CSV. Переопределение применяется
+    после маппинга Comfy (приоритетнее него), исходное поле
+    «Comfy MAX (файл)» в экспорте не трогается.
+    """
+
+    brand: str = "Apple"
+    per_bank: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.brand) and bool(self.per_bank)
+
+    def value_for(self, bank: str) -> int | None:
+        return self.per_bank.get(bank)
+
+    def matches(self, brands: pd.Series) -> pd.Series:
+        """Маска строк бренда (без учёта регистра)."""
+        return brands.astype(str).str.strip().str.casefold() == self.brand.strip().casefold()
+
+    def describe(self) -> str:
+        banks = ", ".join(f"{b}: {v}" for b, v in self.per_bank.items())
+        return f"Доступность {self.brand} переопределена ({banks})"
+
+    # ------------------------------------------------------------- хранение
+    def save(self, path: Path = BRAND_OVERRIDE_FILE) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "brand": self.brand,
+            "per_bank": {str(b): int(v) for b, v in self.per_bank.items()},
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: Path = BRAND_OVERRIDE_FILE) -> "BrandOverride":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            per_bank = {str(b): int(v) for b, v in payload.get("per_bank", {}).items()}
+            return cls(brand=payload.get("brand") or "Apple", per_bank=per_bank)
+        except FileNotFoundError:
+            return cls()
+        except Exception as exc:  # noqa: BLE001 — битый файл не должен ронять запуск
+            log.warning("Не удалось прочитать %s: %s — переопределение сброшено.",
+                        path, exc)
+            return cls()

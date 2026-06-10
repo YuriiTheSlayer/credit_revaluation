@@ -15,7 +15,7 @@ import flet as ft
 import pandas as pd
 
 from core import brand, metrics
-from core.mapping import ComfyMapping, guess_reduced_bank
+from core.mapping import BrandOverride, ComfyMapping, guess_reduced_bank
 from core.model import ALL_BANKS, Dataset, Filters, PAY_COMFY, pay_col
 from export.excel import default_filename, export_report
 from parsers.competitors import parse_competitors_csv
@@ -43,6 +43,7 @@ class Dashboard:
         self.weight_mode: str = "sales"          # 'sales' | 'price'
         self.filters = Filters()
         self.mapping = ComfyMapping.load()       # маппинг доступности Comfy
+        self.apple = BrandOverride.load()        # доступность Apple по банкам
         self.sort_field: str = "sku"
         self.sort_asc: bool = True
         self.table_page: int = 0
@@ -133,11 +134,24 @@ class Dashboard:
             bgcolor=brand.ORANGE_TINT, padding=ft.padding.symmetric(4, 8),
             border_radius=6, visible=False,
         )
+        self.apple_btn = ft.OutlinedButton(
+            f"Доступность {self.apple.brand}", icon=ft.Icons.PHONE_IPHONE,
+            on_click=self._open_apple_dialog, disabled=True,
+            tooltip="Платежи Comfy для товаров бренда по банкам "
+                    "(перезаписывают значения из CSV)",
+        )
+        self.apple_badge = ft.Container(
+            content=ft.Text("", size=11, weight=ft.FontWeight.W_600,
+                            color=brand.ORANGE),
+            bgcolor=brand.ORANGE_TINT, padding=ft.padding.symmetric(4, 8),
+            border_radius=6, visible=False,
+        )
         toolbar = ft.Container(
             padding=ft.padding.only(left=16, right=16, top=10, bottom=2),
             content=ft.Row(
                 [self.bank_selector, self.weight_selector,
-                 self.mapping_btn, self.mapping_badge],
+                 self.mapping_btn, self.mapping_badge,
+                 self.apple_btn, self.apple_badge],
                 spacing=10, scroll=ft.ScrollMode.AUTO,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
@@ -160,13 +174,19 @@ class Dashboard:
             "Сбросить", icon=ft.Icons.FILTER_ALT_OFF,
             on_click=self._reset_filters, disabled=True,
         )
+        self.complete_only = ft.Checkbox(
+            label="Только SKU у всех конкурентов", value=False, disabled=True,
+            tooltip="Исключить товары, представленные лишь у части конкурентов: "
+                    "сравнение по общему набору SKU",
+            on_change=lambda _e: self._filters_changed(),
+        )
         filters_bar = ft.Container(
             padding=ft.padding.only(left=16, right=16, top=6, bottom=4),
             content=ft.Row(
                 [self.f_business.control, self.f_category.control,
                  self.f_subcategory.control, self.f_assort.control,
                  self.f_assort_global.control, self.f_brand.control,
-                 self.search_field, self.reset_filters_btn],
+                 self.search_field, self.complete_only, self.reset_filters_btn],
                 wrap=True, spacing=8, run_spacing=8,
             ),
         )
@@ -367,8 +387,10 @@ class Dashboard:
         self.f_brand.set_options(options("brand"))
         self.search_field.disabled = False
         self.reset_filters_btn.disabled = False
+        self.complete_only.disabled = False
         self.export_btn.disabled = False
         self.mapping_btn.disabled = False
+        self.apple_btn.disabled = False
         self.empty_hint.visible = False
 
         # маппинг Comfy: угадываем банк со сниженной доступностью, подтягиваем
@@ -378,6 +400,7 @@ class Dashboard:
         comfy_values = sorted(int(v) for v in long["comfy_max"].dropna().unique())
         self.mapping.sync_values(comfy_values)
         self._sync_mapping_badge()
+        self._sync_apple_badge()
 
         self._warnings = list(ds.comp.warnings) + list(ds.sales_warnings)
         self.warnings_btn.visible = bool(self._warnings)
@@ -417,6 +440,7 @@ class Dashboard:
             assort_type_global=self.f_assort_global.value,
             brand=self.f_brand.value,
             search=self.search_field.value or "",
+            complete_competitors_only=bool(self.complete_only.value),
         )
         self.table_page = 0
         self._refresh()
@@ -430,6 +454,7 @@ class Dashboard:
                   self.f_assort, self.f_assort_global, self.f_brand):
             f.reset()
         self.search_field.value = ""
+        self.complete_only.value = False
         self._filters_changed()
 
     def _prev_page(self, _e) -> None:
@@ -548,12 +573,118 @@ class Dashboard:
         )
         self.page.open(dialog)
 
+    # ------------------------------------------------------- доступность Apple
+    def _sync_apple_badge(self) -> None:
+        o = self.apple
+        self.apple_btn.text = f"Доступность {o.brand}"
+        if o.is_active:
+            note = (f"{o.brand}: платежи заданы для "
+                    f"{len(o.per_bank)} банк.")
+            if self.dataset is not None and not any(
+                    b in self.dataset.banks for b in o.per_bank):
+                note += " (банки не найдены в файле)"
+            self.apple_badge.content.value = note
+            self.apple_badge.visible = True
+        else:
+            self.apple_badge.visible = False
+
+    def _open_apple_dialog(self, _e) -> None:
+        if self.dataset is None:
+            self._toast("Сначала загрузите CSV конкурентов.", error=True)
+            return
+        ds = self.dataset
+        brands = sorted({str(b) for b in ds.comp.long["brand"] if str(b).strip()})
+        default_brand = self.apple.brand if self.apple.brand in brands else (
+            "Apple" if "Apple" in brands else (brands[0] if brands else "Apple"))
+        brand_dd = ft.Dropdown(
+            label="Бренд", value=default_brand,
+            options=[ft.dropdown.Option(b) for b in brands] or
+                    [ft.dropdown.Option(default_brand)],
+            width=300, dense=True,
+        )
+        fields: dict[str, ft.TextField] = {
+            b: ft.TextField(
+                value=str(self.apple.per_bank[b]) if b in self.apple.per_bank else "",
+                hint_text="из CSV", width=90, dense=True,
+                text_align=ft.TextAlign.RIGHT,
+                keyboard_type=ft.KeyboardType.NUMBER,
+            )
+            for b in ds.banks
+        }
+        rows = [
+            ft.Row(
+                [ft.Text(b, width=150, size=13),
+                 ft.Icon(ft.Icons.ARROW_FORWARD, size=14, color=w.MUTED),
+                 fields[b]],
+                spacing=8,
+            )
+            for b in ds.banks
+        ]
+        hint = ft.Text(
+            "Кол-во платежей Comfy для товаров бренда в каждом банке — "
+            "перезаписывает значение из CSV (приоритетнее маппинга Comfy). "
+            "Пустое поле — оставить как в файле. В режиме «Все банки» "
+            "берётся максимум по банкам.",
+            size=12, color=w.MUTED,
+        )
+
+        def reset(_e) -> None:
+            for f in fields.values():
+                f.value = ""
+                f.update()
+
+        def save(_e) -> None:
+            per_bank: dict[str, int] = {}
+            try:
+                for b, f in fields.items():
+                    text = str(f.value).strip()
+                    if text:
+                        per_bank[b] = int(text)
+            except ValueError:
+                self._toast("Кол-во платежей должно быть целым числом "
+                            "(или пустым полем).", error=True)
+                return
+            if any(v < 0 for v in per_bank.values()):
+                self._toast("Количество платежей не может быть отрицательным.",
+                            error=True)
+                return
+            self.apple.brand = brand_dd.value or default_brand
+            self.apple.per_bank = per_bank
+            try:
+                self.apple.save()
+            except OSError as exc:
+                self._toast(f"Настройка применена, но не сохранена на диск: {exc}",
+                            error=True)
+            self._wide_cache.clear()
+            self._sync_apple_badge()
+            self.page.close(dialog)
+            self._refresh()
+            self.page.update()
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Доступность Comfy по бренду"),
+            content=ft.Container(
+                ft.Column([hint, brand_dd, ft.Divider(), *rows],
+                          scroll=ft.ScrollMode.AUTO, tight=True, spacing=10),
+                width=420, height=min(520, 240 + 46 * len(rows)),
+            ),
+            actions=[
+                ft.TextButton("Сбросить", on_click=reset),
+                ft.TextButton("Отмена", on_click=lambda e: self.page.close(dialog)),
+                ft.FilledButton("Сохранить", on_click=save),
+            ],
+        )
+        self.page.open(dialog)
+
     # ------------------------------------------------------------------ расчёт
     def _get_wide(self, bank: str) -> pd.DataFrame:
-        """Широкая таблица банка с кэшем (инвалидация — при смене данных/маппинга)."""
+        """Широкая таблица банка с кэшем (инвалидация — при смене данных,
+        маппинга или переопределения бренда)."""
         assert self.dataset is not None
         if bank not in self._wide_cache:
-            self._wide_cache[bank] = self.dataset.wide(bank, self.mapping)
+            self._wide_cache[bank] = self.dataset.wide(
+                bank, self.mapping, brand_override=self.apple)
         return self._wide_cache[bank]
 
     def _current_frames(self) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -809,6 +940,7 @@ class Dashboard:
                 has_sales=ds.has_sales,
                 filters_desc=f"{self.filters.describe()}",
                 mapping=self.mapping,
+                brand_override=self.apple,
             )
             self._toast(f"Отчёт сохранён: {Path(path).name}")
         except Exception as exc:  # noqa: BLE001

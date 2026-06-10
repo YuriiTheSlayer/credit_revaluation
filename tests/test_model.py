@@ -78,3 +78,21 @@ def test_filters_describe(dataset):
     assert Filters().describe() == "без фильтров"
     desc = Filters(brand={"Thomas"}, search="INOX").describe()
     assert "Thomas" in desc and "INOX" in desc
+
+
+def test_complete_competitors_only_filter(dataset):
+    """Галка «только SKU у всех конкурентов»: товары, представленные лишь у
+    части конкурентов, исключаются из расчёта."""
+    wide = dataset.wide("Monobank")
+    flt = Filters(complete_competitors_only=True)
+    sub = flt.apply(wide)
+    assert len(sub) == 8                       # из 12 SKU полные данные у 8
+    skus = set(sub["sku"])
+    assert "20671" not in skus                 # только foxtrot → исключён
+    assert "912618" not in skus and "922532" not in skus
+    assert "20676" in skus and "925595" in skus
+    # у оставшихся заполнены все колонки конкурентов
+    comp_cols = [c for c in sub.columns if c.startswith("pay::")]
+    assert sub[comp_cols].notna().all(axis=None)
+    assert "у всех конкурентов" in flt.describe()
+    assert flt.active_count == 1

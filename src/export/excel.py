@@ -29,7 +29,7 @@ import xlsxwriter
 from xlsxwriter.utility import xl_col_to_name
 
 from core import brand, metrics
-from core.mapping import ComfyMapping
+from core.mapping import BrandOverride, ComfyMapping
 from core.model import PAY_COMFY, pay_col
 
 SHEET_SUMMARY = "Сводка"
@@ -148,7 +148,8 @@ def _cells(series: pd.Series, numeric: bool) -> list:
 
 
 def _title(bank: str, filters_desc: str, generated: date,
-           mapping: ComfyMapping | None) -> str:
+           mapping: ComfyMapping | None,
+           brand_override: BrandOverride | None = None) -> str:
     parts = [f"Банк: {bank}", f"Сформировано: {generated:%Y-%m-%d}",
              f"Фильтры: {filters_desc}"]
     if mapping is not None and mapping.applies_to(bank):
@@ -156,6 +157,8 @@ def _title(bank: str, filters_desc: str, generated: date,
             f"Маппинг Comfy активен ({mapping.changed_count} знач.): "
             "платежи Comfy приведены к доступности этого банка"
         )
+    if brand_override is not None and brand_override.is_active:
+        parts.append(brand_override.describe())
     return "    ".join(parts)
 
 
@@ -174,12 +177,14 @@ def _write_data_sheet(
     filters_desc: str,
     generated: date,
     mapping: ComfyMapping | None,
+    brand_override: BrandOverride | None,
 ) -> None:
     ws = wb.add_worksheet(sheet_name)
     columns = _data_columns(has_sales, competitor_names)
     ncols = len(columns)
 
-    ws.write_string(0, 0, _title(bank, filters_desc, generated, mapping), fmts.title)
+    ws.write_string(0, 0, _title(bank, filters_desc, generated, mapping,
+                                 brand_override), fmts.title)
     ws.set_row(1, 42)
     for c, col in enumerate(columns):
         ws.write_string(1, c, col.header, fmts.header)
@@ -251,6 +256,7 @@ def _write_summary_sheet(
     filters_desc: str,
     generated: date,
     mapping: ComfyMapping | None,
+    brand_override: BrandOverride | None,
 ) -> None:
     ws = wb.add_worksheet(sheet_name)
     retailers = [(PAY_COMFY, "Comfy")] + [
@@ -269,7 +275,8 @@ def _write_summary_sheet(
             headers.append((f"{disp}\nвеса: {mode_caption[mode]}", "header", 10))
     headers.append(("Comfy ≥ конкурентов", "header", 11))
 
-    ws.write_string(0, 0, _title(bank, filters_desc, generated, mapping), fmts.title)
+    ws.write_string(0, 0, _title(bank, filters_desc, generated, mapping,
+                                 brand_override), fmts.title)
     ws.set_row(1, 44)
     for c, (text, fmt, width) in enumerate(headers):
         ws.write_string(1, c, text, getattr(fmts, fmt))
@@ -366,12 +373,15 @@ def export_report(
     filters_desc: str = "без фильтров",
     generated: date | None = None,
     mapping: ComfyMapping | None = None,
+    brand_override: BrandOverride | None = None,
 ) -> Path:
     """Пишет отчёт в ``path``.
 
     ``frames`` — список пар (банк, широкая отфильтрованная таблица; платежи
-    Comfy уже приведены через маппинг, если он применим). Для одного банка
-    листы называются «Сводка» и «Данные», для нескольких — с суффиксом банка.
+    Comfy уже приведены через маппинг и переопределение бренда, если они
+    применимы — ``mapping``/``brand_override`` здесь только для пометки в
+    шапке). Для одного банка листы называются «Сводка» и «Данные», для
+    нескольких — с суффиксом банка.
     """
     if not frames:
         raise ValueError("Нечего экспортировать: не передано ни одного банка.")
@@ -387,7 +397,7 @@ def export_report(
         used: set[str] = set()
         for bank, wide in frames:
             args = (wide, has_sales, competitor_names, bank, filters_desc,
-                    generated, mapping)
+                    generated, mapping, brand_override)
             _write_summary_sheet(
                 wb, fmts, _sheet_name(SHEET_SUMMARY, None if single else bank, used),
                 *args,

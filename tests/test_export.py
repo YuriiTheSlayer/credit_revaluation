@@ -4,7 +4,7 @@ import openpyxl
 import pandas as pd
 import pytest
 
-from core.mapping import ComfyMapping
+from core.mapping import BrandOverride, ComfyMapping
 from core.model import ALL_BANKS, Dataset
 from export.excel import SHEET_DATA, SHEET_SUMMARY, default_filename, export_report
 from parsers.competitors import parse_competitors_csv
@@ -187,6 +187,24 @@ def test_mapping_reflected_in_export(tmp_path, kniga_path):
     assert ws.cell(row=r, column=heads["Comfy MAX (файл)"]).value == 10   # исходное
     # Monobank foxtrot = 6 → откл. = 5 − 6 = −1
     assert ws.cell(row=r, column=heads["Откл. Comfy − конк."]).value == -1
+
+
+def test_brand_override_reflected_in_export(tmp_path, kniga_path):
+    ds = Dataset(parse_competitors_csv(kniga_path))
+    override = BrandOverride(brand="Thomas", per_bank={"Monobank": 3})
+    wide = ds.wide("Monobank", brand_override=override)
+    out = tmp_path / "apple.xlsx"
+    export_report(out, [("Monobank", wide)], ds.competitor_names(),
+                  has_sales=False, brand_override=override)
+
+    ws = openpyxl.load_workbook(out)[SHEET_DATA]
+    assert "Thomas" in str(ws["A1"].value)     # пометка в шапке
+    heads = _headers(ws)
+    rows = {str(ws.cell(row=r, column=heads["КодТовара"]).value): r
+            for r in range(3, 3 + 12)}
+    r = rows["20671"]
+    assert ws.cell(row=r, column=heads["Платежей Comfy"]).value == 3
+    assert ws.cell(row=r, column=heads["Comfy MAX (файл)"]).value == 10
 
 
 def test_export_empty_frame_writes_stub(tmp_path, dataset):

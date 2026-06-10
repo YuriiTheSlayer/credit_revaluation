@@ -38,6 +38,10 @@ class FakePage:
 def dash(kniga_path, sales_path) -> Dashboard:
     page = FakePage()
     d = Dashboard(page)  # type: ignore[arg-type]
+    # тесты не должны зависеть от настроек, сохранённых на машине разработчика
+    from core.mapping import BrandOverride, ComfyMapping
+    d.mapping = ComfyMapping()
+    d.apple = BrandOverride()
     dataset = Dataset(parse_competitors_csv(kniga_path)).attach_sales(parse_sales(sales_path))
     d.dataset = dataset
     d.bank = dataset.banks[0]
@@ -131,6 +135,38 @@ def test_mapping_dialog_builds(dash):
     assert dash.page.opened, "диалог маппинга должен открыться"
     dialog = dash.page.opened[-1]
     assert "Маппинг" in dialog.title.value
+
+
+def test_complete_only_checkbox_filters_table(dash):
+    dash.complete_only.value = True
+    dash._filters_changed()
+    assert len(dash.table.rows) == 8           # SKU с данными у всех конкурентов
+    dash._reset_filters(None)
+    assert dash.complete_only.value is False
+    assert len(dash.table.rows) == 12
+
+
+def test_apple_override_in_dashboard(dash):
+    from core.mapping import BrandOverride
+
+    dash.apple = BrandOverride(brand="Thomas", per_bank={"Monobank": 3})
+    dash._wide_cache.clear()
+    dash._sync_apple_badge()
+    assert dash.apple_badge.visible
+    assert "Thomas" in dash.apple_btn.text
+
+    wide = dash._get_wide("Monobank")
+    row = wide[wide["sku"] == "20671"].iloc[0]
+    assert row["pay_comfy"] == 3 and row["dev_bank"] == -3
+    dash._refresh()
+    assert dash.table.rows
+
+
+def test_apple_dialog_builds(dash):
+    dash._open_apple_dialog(None)
+    assert dash.page.opened, "диалог доступности бренда должен открыться"
+    dialog = dash.page.opened[-1]
+    assert "бренд" in dialog.title.value.lower()
 
 
 def _walk(control):

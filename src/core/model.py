@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
-from core.mapping import ComfyMapping
+from core.mapping import BrandOverride, ComfyMapping
 from parsers.competitors import CompetitorsData, competitor_display_name
 from parsers.sales import SalesData
 
@@ -70,12 +70,22 @@ class Dataset:
             )
         return replace(self, sales=sales, sales_warnings=warnings)
 
-    def wide(self, bank: str, mapping: ComfyMapping | None = None) -> pd.DataFrame:
+    def wide(
+        self,
+        bank: str,
+        mapping: ComfyMapping | None = None,
+        brand_override: BrandOverride | None = None,
+    ) -> pd.DataFrame:
         """Широкая таблица по выбранному банку (или :data:`ALL_BANKS`).
 
         Если ``mapping`` задан и применяется к этому банку, платежи Comfy
         (`pay_comfy`) пересчитываются через таблицу «макс. доступность →
         доступность в банке»; «Все банки» и остальные банки не затрагиваются.
+
+        ``brand_override`` (обычно Apple) перезаписывает платежи Comfy для
+        SKU бренда значением, заданным для банка вручную, — приоритетнее
+        маппинга. В режиме «Все банки» берётся max по банкам: для банков без
+        переопределения — значение из CSV.
         """
         long = self.comp.long
         sub = long if bank == ALL_BANKS else long[long["bank"] == bank]
@@ -102,6 +112,25 @@ class Dataset:
             wide[PAY_COMFY] = mapping.apply(wide["comfy_max"])
         else:
             wide[PAY_COMFY] = wide["comfy_max"].astype("Float64")
+
+        if brand_override is not None and brand_override.is_active:
+            mask = brand_override.matches(wide["brand"])
+            if mask.any():
+                if bank == ALL_BANKS:
+                    # max по банкам: переопределённые значения против CSV
+                    # для банков, оставшихся без переопределения
+                    best = float(max(brand_override.per_bank.values()))
+                    if set(self.banks) <= set(brand_override.per_bank):
+                        wide.loc[mask, PAY_COMFY] = best
+                    else:
+                        current = wide.loc[mask, PAY_COMFY]
+                        wide.loc[mask, PAY_COMFY] = current.where(
+                            current >= best, best
+                        )
+                else:
+                    value = brand_override.value_for(bank)
+                    if value is not None:
+                        wide.loc[mask, PAY_COMFY] = float(value)
 
         comp_cols = [pay_col(c) for c in self.competitors]
         if comp_cols:
@@ -133,7 +162,12 @@ class Dataset:
 
 @dataclass
 class Filters:
-    """Мультивыбор по классификатору + поиск; None — фильтр не активен."""
+    """Мультивыбор по классификатору + поиск; None — фильтр не активен.
+
+    ``complete_competitors_only`` — оставить только SKU, по которым есть
+    данные у **всех** конкурентов файла (в выбранном банке): сравнение
+    идёт по общему набору товаров.
+    """
 
     business: set[str] | None = None
     category: set[str] | None = None
@@ -142,6 +176,7 @@ class Filters:
     assort_type_global: set[str] | None = None
     brand: set[str] | None = None
     search: str = ""
+    complete_competitors_only: bool = False
 
     _FIELD_TO_COLUMN = {
         "business": "business",
@@ -155,7 +190,8 @@ class Filters:
     @property
     def active_count(self) -> int:
         n = sum(1 for f in self._FIELD_TO_COLUMN if getattr(self, f))
-        return n + (1 if self.search.strip() else 0)
+        return n + (1 if self.search.strip() else 0) \
+            + (1 if self.complete_competitors_only else 0)
 
     def apply(self, wide: pd.DataFrame) -> pd.DataFrame:
         """Возвращает отфильтрованную широкую таблицу (копия не делается)."""
@@ -170,6 +206,10 @@ class Filters:
                 wide["name"].astype(str).str.lower().str.contains(text, regex=False)
                 | wide["sku"].astype(str).str.contains(text, regex=False)
             )
+        if self.complete_competitors_only:
+            comp_cols = [c for c in wide.columns if c.startswith(PAY_PREFIX)]
+            if comp_cols:
+                mask &= wide[comp_cols].notna().all(axis=1)
         return wide[mask]
 
     def describe(self) -> str:
@@ -186,4 +226,6 @@ class Filters:
                 parts.append(f"{label}: {', '.join(sorted(selected))}")
         if self.search.strip():
             parts.append(f"Поиск: «{self.search.strip()}»")
+        if self.complete_competitors_only:
+            parts.append("только SKU, представленные у всех конкурентов")
         return "; ".join(parts) if parts else "без фильтров"
