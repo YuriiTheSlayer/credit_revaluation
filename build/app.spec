@@ -4,11 +4,11 @@
 Сборку выполнять на Windows 10/11 x64:
 
     pip install -r requirements-dev.txt
-    pyinstaller build/app.spec        # → dist/PaymentTermsDashboard.exe
+    pyinstaller build/app.spec --noconfirm   # → dist/PaymentTermsDashboard.exe
 
-Альтернатива (генерирует свой spec, тоже onefile):
-
-    flet pack src/main.py --name PaymentTermsDashboard
+Окно приложения — Edge WebView2 (предустановлен на Windows 11 и обновлённых
+Windows 10; при отсутствии ставится бесплатным Evergreen-инсталлятором
+Microsoft). Фронтенд (webui/assets) упаковывается внутрь exe.
 """
 
 import os
@@ -16,8 +16,8 @@ import os
 from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = [], [], []
-# flet_desktop содержит клиент Flutter — без него окно не откроется
-for pkg in ("flet", "flet_desktop"):
+# pywebview: платформенные бэкенды подтягиваются динамически
+for pkg in ("webview", "clr_loader", "pythonnet"):
     try:
         d, b, h = collect_all(pkg)
         datas += d
@@ -28,15 +28,23 @@ for pkg in ("flet", "flet_desktop"):
 
 SRC = os.path.join(SPECPATH, "..", "src")  # noqa: F821 — SPECPATH задаёт PyInstaller
 
+# JS-фронтенд внутрь сборки (см. main.index_path)
+datas += [(os.path.join(SRC, "webui", "assets"), os.path.join("webui", "assets"))]
+
 a = Analysis(
     [os.path.join(SRC, "main.py")],
     pathex=[SRC],
     binaries=binaries,
     datas=datas,
-    hiddenimports=hiddenimports + ["xlsxwriter", "openpyxl"],
+    hiddenimports=hiddenimports + [
+        "xlsxwriter",
+        "openpyxl",
+        "webview.platforms.edgechromium",
+        "webview.platforms.winforms",
+    ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "scipy", "IPython", "jupyter"],
+    excludes=["tkinter", "matplotlib", "scipy", "IPython", "jupyter", "flet"],
     noarchive=False,
 )
 
@@ -58,4 +66,3 @@ exe = EXE(
 )
 # onefile-режим: binaries и datas переданы прямо в EXE (без шага COLLECT),
 # поэтому на выходе единственный файл dist/PaymentTermsDashboard.exe
-

@@ -1,7 +1,10 @@
-"""Точка входа Payment Terms Dashboard.
+"""Точка входа Payment Terms Dashboard (pywebview + JS-фронтенд).
 
 Запуск из исходников:  python src/main.py
 Сборка exe:            pyinstaller build/app.spec
+
+Окно — нативный WebView ОС (на Windows — Edge WebView2), фронтенд —
+локальные HTML/CSS/JS из ``webui/assets`` без внешних зависимостей и сети.
 """
 
 import sys
@@ -13,18 +16,35 @@ _SRC = Path(__file__).resolve().parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-import flet as ft  # noqa: E402
+import webview  # noqa: E402
 
-from ui.dashboard import mount  # noqa: E402
+from core import brand  # noqa: E402
+from webui.api import Api  # noqa: E402
 
 
-def main(page: ft.Page) -> None:
-    page.window.width = 1280
-    page.window.height = 860
-    page.window.min_width = 980
-    page.window.min_height = 640
-    mount(page)
+def index_path() -> Path:
+    """index.html в дев-режиме и внутри onefile-сборки PyInstaller."""
+    base = Path(getattr(sys, "_MEIPASS", _SRC))
+    candidate = base / "webui" / "assets" / "index.html"
+    if not candidate.exists():
+        raise FileNotFoundError(f"Не найден фронтенд: {candidate}")
+    return candidate
+
+
+def main() -> None:
+    api = Api()
+    window = webview.create_window(
+        f"{brand.APP_TITLE} — Comfy vs конкуренты",
+        url=str(index_path()),
+        js_api=api,
+        width=1320,
+        height=900,
+        min_size=(1024, 700),
+        background_color=brand.BG,
+    )
+    api.attach_window(window)
+    webview.start()
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    main()

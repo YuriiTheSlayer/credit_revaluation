@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment Terms Dashboard — Comfy vs конкуренты</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <span class="wordmark">COMFY</span>
+      <div class="brand-titles">
+        <h1 id="appTitle">Payment Terms Dashboard</h1>
+        <p id="appSubtitle">Сроки рассрочки: Comfy vs конкуренты</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="warningsBtn" class="icon-btn hidden" title="Предупреждения">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2 1 21h22L12 2zm0 6 .9 7h-1.8l.9-7zm0 11.2a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4z"/></svg>
+      </button>
+      <button id="btnCompetitors" class="btn tonal">
+        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M5 20h14v-2H5v2zM12 2 6 8h4v6h4V8h4l-6-6z"/></svg>
+        Конкуренты (CSV)
+      </button>
+      <button id="btnSales" class="btn tonal">
+        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.2 14h9.9c.8 0 1.4-.4 1.7-1l3.1-7-2-.9L17 12H7.6L4.3 4H1v2h2l3.6 8.6-1.4 2.4c-.7 1.3.2 3 1.8 3H19v-2H7l1.2-2z"/></svg>
+        Продажи (CSV/XLSX)
+      </button>
+      <label class="chk"><input type="checkbox" id="exportAll"><span>Все банки</span></label>
+      <button id="btnExport" class="btn primary" disabled>
+        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M5 20h14v-2H5v2zm7-18-6 6h4v6h4V8h4l-6-6z" transform="rotate(180 12 11)"/></svg>
+        Экспорт в Excel
+      </button>
+    </div>
+  </header>
+
+  <div class="statusline">
+    <span id="statusCompetitors" class="status">CSV конкурентов: не загружен</span>
+    <span id="statusSales" class="status">Файл продаж: не загружен (опционально)</span>
+  </div>
+
+  <div id="progress" class="progress hidden"><div class="progress-bar"></div></div>
+
+  <nav class="toolbar">
+    <div id="bankSeg" class="seg hidden"></div>
+    <div id="weightSeg" class="seg hidden"></div>
+    <button id="btnMapping" class="btn outline" disabled>
+      <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 17v2h6v-2H3zm0-12v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+      Маппинг Comfy
+    </button>
+    <span id="mappingBadge" class="badge hidden"></span>
+    <button id="btnApple" class="btn outline" disabled>
+      <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M16 1H8a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm-4 21a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm5-4H7V4h10v14z"/></svg>
+      <span id="appleBtnLabel">Доступность Apple</span>
+    </button>
+    <span id="appleBadge" class="badge hidden"></span>
+  </nav>
+
+  <div id="filtersBar" class="filters hidden">
+    <div id="msHost" class="ms-host"></div>
+    <input id="search" class="search" type="text" placeholder="Поиск: название или код товара…">
+    <label class="chk"><input type="checkbox" id="completeOnly"><span>Только SKU у всех конкурентов</span></label>
+    <button id="btnResetFilters" class="btn text">Сбросить</button>
+  </div>
+
+  <main class="content">
+    <div id="emptyHint" class="empty">
+      <svg viewBox="0 0 24 24" width="46" height="46"><path fill="currentColor" d="M5 20h14v-2H5v2zM12 2 6 8h4v6h4V8h4l-6-6z"/></svg>
+      <p>Загрузите CSV-выгрузку по конкурентам, чтобы построить дашборд.<br>
+      <span class="muted">Файлы можно перетащить прямо в окно.</span></p>
+    </div>
+
+    <section id="kpiRow" class="kpi-row"></section>
+
+    <section id="tableCard" class="card hidden">
+      <div class="card-head">
+        <h2 id="tableCaption">Таблица SKU</h2>
+        <div id="pager" class="pager hidden">
+          <button id="pagePrev" class="icon-btn">‹</button>
+          <span id="pageInfo" class="muted"></span>
+          <button id="pageNext" class="icon-btn">›</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="skuTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="chartsCard" class="card hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="terms">Средний срок по категориям</button>
+        <button class="tab" data-tab="dev">Распределение отклонений</button>
+      </div>
+      <div id="chartTerms" class="chart-host"></div>
+      <div id="chartDev" class="chart-host hidden"></div>
+    </section>
+  </main>
+
+  <div id="dropOverlay" class="drop-overlay hidden">
+    <div class="drop-box">Отпустите файл — CSV конкурентов или файл продаж</div>
+  </div>
+  <div id="modalRoot"></div>
+  <div id="toast" class="toast hidden"></div>
+  <div id="busy" class="busy hidden"><div class="spinner"></div></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
