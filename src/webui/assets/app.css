@@ -276,11 +276,50 @@ td.name { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 .tab:hover { color: var(--green-dark); }
 .tab.active { color: var(--graphite); border-bottom-color: var(--green); }
 .chart-host { padding: 12px 4px 4px; }
-.legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; font-size: 12px; }
-.legend .key { display: inline-flex; align-items: center; gap: 5px; }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; font-size: 12px; }
+.legend .key {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 4px; cursor: pointer; user-select: none;
+  font-weight: 600; color: var(--dark-gray);
+}
+.legend .key:hover { background: var(--bg); }
+.legend .key.off { opacity: .38; text-decoration: line-through; }
 .legend .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .legend .hint { margin-left: auto; color: var(--muted); font-size: 11px; }
 .chart-svg text { font-family: inherit; }
+.chart-svg .bar { transition: opacity .12s ease; }
+.chart-svg .zone, .chart-svg .bar { cursor: pointer; }
+.chart-svg .band { transition: opacity .12s ease; pointer-events: none; }
+
+/* фирменный тултип графиков */
+.chart-tip {
+  position: fixed; z-index: 130; pointer-events: none;
+  min-width: 190px; max-width: 300px;
+  background: var(--surface); border: 1px solid var(--outline);
+  border-radius: 8px; padding: 10px 12px;
+  box-shadow: 0 10px 32px rgba(26, 26, 26, .18);
+  font-size: 12px;
+}
+.chart-tip h4 {
+  display: flex; align-items: center; gap: 7px;
+  margin: 0 0 7px; font-size: 11px; font-weight: 800;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--dark-gray);
+}
+.chart-tip h4::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--orange); flex: none;
+}
+.chart-tip .row { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
+.chart-tip .row.hl { background: var(--bg); border-radius: 4px; padding: 2px 5px; margin: 2px -5px; }
+.chart-tip .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.chart-tip .nm { color: var(--dark-gray); }
+.chart-tip .val { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chart-tip .val.good { color: var(--green-dark); }
+.chart-tip .val.bad { color: var(--red); }
+.chart-tip .foot {
+  margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--outline);
+  color: var(--muted); font-size: 11px;
+}
 
 /* --------------------------------------------------------------- модалки */
 .overlay {

@@ -306,11 +306,13 @@ function renderTable() {
 }
 
 /* -------------------------------------------------------------- графики */
+let hiddenSeries = new Set();   // ритейлеры, выключенные кликом по легенде
+
 function renderCharts() {
   const card = $("#chartsCard");
   const show = S.loaded && S.charts;
   card.classList.toggle("hidden", !show);
-  if (!show) return;
+  if (!show) { hideTip(); return; }
   renderTermsChart($("#chartTerms"), S.charts.terms);
   renderDevChart($("#chartDev"), S.charts.dev);
 }
@@ -321,46 +323,164 @@ function chartScale(maxValue, height, padTop) {
   return { top, step, y: (v) => padTop + (height - padTop) * (1 - v / top) };
 }
 
+/* --- фирменный тултип -------------------------------------------------- */
+let tipEl = null;
+function chartTip() {
+  if (!tipEl) {
+    tipEl = document.createElement("div");
+    tipEl.className = "chart-tip hidden";
+    document.body.appendChild(tipEl);
+  }
+  return tipEl;
+}
+function showTip(html, ev) {
+  const el = chartTip();
+  el.innerHTML = html;
+  el.classList.remove("hidden");
+  const pad = 14;
+  const r = el.getBoundingClientRect();
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - pad;
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+}
+function hideTip() {
+  if (tipEl) tipEl.classList.add("hidden");
+}
+
+function buildLegend(allSeries, hint) {
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  for (const s of allSeries) {
+    const key = document.createElement("span");
+    key.className = "key" + (hiddenSeries.has(s.name) ? " off" : "");
+    key.title = "Клик — показать/скрыть серию";
+    key.innerHTML = `<span class="swatch" style="background:${s.color}"></span>${esc(s.name)}`;
+    key.onclick = () => {
+      hiddenSeries.has(s.name) ? hiddenSeries.delete(s.name) : hiddenSeries.add(s.name);
+      renderCharts();
+    };
+    legend.appendChild(key);
+  }
+  if (hint) {
+    const h = document.createElement("span");
+    h.className = "hint";
+    h.textContent = hint;
+    legend.appendChild(h);
+  }
+  return legend;
+}
+
+function toggleCategoryFilter(cat) {
+  const cur = msState.category;
+  if (!cur) return;
+  if (cur.size === 1 && cur.has(cat)) cur.clear();   // повторный клик — снять
+  else { cur.clear(); cur.add(cat); }
+  hideTip();
+  applyFilters();
+}
+
 function renderTermsChart(host, terms) {
+  const series = terms.series.filter((s) => !hiddenSeries.has(s.name));
+  host.innerHTML = "";
+  host.appendChild(buildLegend(terms.series, terms.hint));
+  if (!series.length) {
+    host.insertAdjacentHTML("beforeend",
+      '<p class="muted">Все серии скрыты — включите их кликом по легенде.</p>');
+    return;
+  }
+
   const W = Math.max(640, host.clientWidth - 12), H = 300;
   const padL = 34, padB = 52, padT = 8;
   const plotH = H - padB;
   let maxV = 1;
-  for (const s of terms.series)
+  for (const s of series)
     for (const v of s.values) if (v != null && v > maxV) maxV = v;
   const { top, step, y } = chartScale(maxV, plotH, padT);
 
   const n = terms.categories.length || 1;
   const groupW = (W - padL) / n;
-  const barW = Math.min(20, Math.max(7, (groupW - 18) / terms.series.length));
+  const barW = Math.min(20, Math.max(7, (groupW - 18) / series.length));
 
   let svg = "";
+  // зоны наведения и подсветка группы — за барами
+  terms.categories.forEach((_cat, ci) => {
+    const gx = padL + ci * groupW;
+    svg += `<rect class="band" data-ci="${ci}" x="${gx + 1}" y="${padT}" width="${groupW - 2}" `
+      + `height="${plotH - padT}" rx="4" fill="rgba(42,189,19,.10)" opacity="0"/>`;
+    svg += `<rect class="zone" data-ci="${ci}" x="${gx}" y="${padT}" width="${groupW}" `
+      + `height="${plotH - padT}" fill="transparent"/>`;
+  });
   for (let g = 0; g <= top; g += step) {
     const gy = y(g);
-    svg += `<line x1="${padL}" y1="${gy}" x2="${W}" y2="${gy}" stroke="var(--outline)" stroke-width="1"/>`;
+    svg += `<line x1="${padL}" y1="${gy}" x2="${W}" y2="${gy}" stroke="var(--outline)" stroke-width="1" pointer-events="none"/>`;
     svg += `<text x="${padL - 6}" y="${gy + 3}" font-size="10" fill="var(--muted)" text-anchor="end">${g}</text>`;
   }
   terms.categories.forEach((cat, ci) => {
-    const x0 = padL + ci * groupW + (groupW - barW * terms.series.length) / 2;
-    terms.series.forEach((s, si) => {
+    const x0 = padL + ci * groupW + (groupW - barW * series.length) / 2;
+    series.forEach((s, si) => {
       const v = s.values[ci];
       if (v == null) return;
       const by = y(v);
-      svg += `<rect x="${x0 + si * barW + 1}" y="${by}" width="${barW - 2}" `
-        + `height="${Math.max(1, plotH - by)}" rx="2" fill="${s.color}">`
-        + `<title>${esc(cat)} — ${esc(s.name)}: ${v.toFixed(2)}</title></rect>`;
+      svg += `<rect class="bar" data-ci="${ci}" data-name="${esc(s.name)}" `
+        + `x="${x0 + si * barW + 1}" y="${by}" width="${barW - 2}" `
+        + `height="${Math.max(1, plotH - by)}" rx="2" fill="${s.color}"/>`;
     });
     const label = cat.length > 17 ? cat.slice(0, 16) + "…" : cat;
     const lx = padL + ci * groupW + groupW / 2;
-    svg += `<text x="${lx}" y="${plotH + 14}" font-size="10" fill="var(--muted)" `
-      + `text-anchor="end" transform="rotate(-18 ${lx} ${plotH + 14})">${esc(label)}</text>`;
+    svg += `<text class="xlab" data-ci="${ci}" x="${lx}" y="${plotH + 14}" font-size="10" `
+      + `fill="var(--muted)" text-anchor="end" transform="rotate(-18 ${lx} ${plotH + 14})">${esc(label)}</text>`;
   });
 
-  const legend = terms.series.map((s) =>
-    `<span class="key"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}</span>`
-  ).join("") + (terms.hint ? `<span class="hint">${esc(terms.hint)}</span>` : "");
-  host.innerHTML = `<div class="legend">${legend}</div>`
-    + `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${svg}</svg>`;
+  host.insertAdjacentHTML("beforeend",
+    `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${svg}</svg>`);
+
+  const svgEl = host.querySelector("svg");
+  const bars = [...svgEl.querySelectorAll(".bar")];
+  const bands = [...svgEl.querySelectorAll(".band")];
+
+  const tipHTML = (ci, hoverName) => {
+    const cat = terms.categories[ci];
+    const rows = series.map((s) => {
+      const v = s.values[ci];
+      return `<div class="row${s.name === hoverName ? " hl" : ""}">`
+        + `<span class="sw" style="background:${s.color}"></span>`
+        + `<span class="nm">${esc(s.name)}</span>`
+        + `<span class="val">${v == null ? "—" : v.toFixed(2)}</span></div>`;
+    }).join("");
+    const comfy = terms.series.find((s) => s.name === "Comfy");
+    const cv = comfy ? comfy.values[ci] : null;
+    const best = Math.max(...terms.series
+      .filter((s) => s.name !== "Comfy")
+      .map((s) => s.values[ci])
+      .filter((v) => v != null), -Infinity);
+    let delta = "";
+    if (cv != null && best > -Infinity) {
+      const d = cv - best;
+      const cls = d >= 0 ? "good" : "bad";
+      delta = `<div class="row"><span class="nm">Comfy − лучший конкурент</span>`
+        + `<span class="val ${cls}">${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)}</span></div>`;
+    }
+    return `<h4>${esc(cat)}</h4>${rows}${delta}`
+      + `<div class="foot">Клик — фильтр по категории</div>`;
+  };
+
+  const highlight = (ci) => {
+    bands.forEach((b) => b.setAttribute("opacity", b.dataset.ci === ci ? "1" : "0"));
+    bars.forEach((b) => { b.style.opacity = (ci == null || b.dataset.ci === ci) ? "1" : ".35"; });
+  };
+  svgEl.addEventListener("mousemove", (ev) => {
+    const ci = ev.target.dataset ? ev.target.dataset.ci : null;
+    if (ci == null) { highlight(null); hideTip(); return; }
+    highlight(ci);
+    showTip(tipHTML(ci, ev.target.dataset.name || null), ev);
+  });
+  svgEl.addEventListener("mouseleave", () => { highlight(null); hideTip(); });
+  svgEl.addEventListener("click", (ev) => {
+    const ci = ev.target.dataset ? ev.target.dataset.ci : null;
+    if (ci != null) toggleCategoryFilter(terms.categories[ci]);
+  });
 }
 
 function renderDevChart(host, dev) {
@@ -371,31 +491,64 @@ function renderDevChart(host, dev) {
   const W = Math.max(640, host.clientWidth - 12), H = 300;
   const padL = 38, padB = 30, padT = 8;
   const plotH = H - padB;
+  const totalSku = dev.items.reduce((acc, d) => acc + d.count, 0);
   const maxV = Math.max(...dev.items.map((d) => d.count), 1);
   const { top, step, y } = chartScale(maxV, plotH, padT);
   const n = dev.items.length;
   const slot = (W - padL) / n;
   const barW = Math.min(30, Math.max(8, slot - 8));
   const colors = { bad: "var(--red)", good: "var(--green)", zero: "var(--muted)" };
+  const kindLabel = { bad: "проигрываем", good: "выигрываем", zero: "паритет" };
 
   let svg = "";
+  dev.items.forEach((_item, i) => {
+    const gx = padL + i * slot;
+    svg += `<rect class="zone" data-i="${i}" x="${gx}" y="${padT}" width="${slot}" `
+      + `height="${plotH - padT}" fill="transparent"/>`;
+  });
   for (let g = 0; g <= top; g += step) {
     const gy = y(g);
-    svg += `<line x1="${padL}" y1="${gy}" x2="${W}" y2="${gy}" stroke="var(--outline)"/>`;
+    svg += `<line x1="${padL}" y1="${gy}" x2="${W}" y2="${gy}" stroke="var(--outline)" pointer-events="none"/>`;
     svg += `<text x="${padL - 6}" y="${gy + 3}" font-size="10" fill="var(--muted)" text-anchor="end">${g}</text>`;
   }
   dev.items.forEach((item, i) => {
     const x = padL + i * slot + (slot - barW) / 2;
     const by = y(item.count);
-    svg += `<rect x="${x}" y="${by}" width="${barW}" height="${Math.max(1, plotH - by)}" rx="2" `
-      + `fill="${colors[item.kind]}"><title>Откл. ${esc(item.label)}: ${item.count} SKU</title></rect>`;
+    svg += `<rect class="bar" data-i="${i}" x="${x}" y="${by}" width="${barW}" `
+      + `height="${Math.max(1, plotH - by)}" rx="2" fill="${colors[item.kind]}"/>`;
     svg += `<text x="${x + barW / 2}" y="${plotH + 14}" font-size="10" fill="var(--muted)" `
       + `text-anchor="middle">${esc(item.label)}</text>`;
   });
   host.innerHTML =
     `<p class="muted" style="font-size:11px;margin:0 0 6px">Откл. = платежи Comfy − лучший конкурент (по выбранному банку)</p>`
     + `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${svg}</svg>`;
+
+  const svgEl = host.querySelector("svg");
+  const bars = [...svgEl.querySelectorAll(".bar")];
+  svgEl.addEventListener("mousemove", (ev) => {
+    const i = ev.target.dataset ? ev.target.dataset.i : null;
+    if (i == null) { bars.forEach((b) => b.style.opacity = "1"); hideTip(); return; }
+    bars.forEach((b) => { b.style.opacity = b.dataset.i === i ? "1" : ".35"; });
+    const item = dev.items[+i];
+    const share = totalSku ? Math.round(item.count / totalSku * 100) : 0;
+    showTip(
+      `<h4>Откл. ${esc(item.label)} платежей</h4>`
+      + `<div class="row"><span class="sw" style="background:${colors[item.kind]}"></span>`
+      + `<span class="nm">${kindLabel[item.kind]}</span>`
+      + `<span class="val">${item.count} SKU · ${share}%</span></div>`, ev);
+  });
+  svgEl.addEventListener("mouseleave", () => {
+    bars.forEach((b) => b.style.opacity = "1");
+    hideTip();
+  });
 }
+
+/* перерисовка графиков под новую ширину окна */
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (S && S.charts) renderCharts(); }, 150);
+});
 
 /* -------------------------------------------------------------- модалки */
 function modal({ title, bodyHTML, actions }) {
