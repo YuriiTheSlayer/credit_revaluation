@@ -32,6 +32,9 @@ def _reference_wide(example_xlsx_path) -> pd.DataFrame:
     df["comfy_max"] = df["pay_comfy"]
     df["comp_max_bank"] = df[comp_cols].max(axis=1)
     df["dev_bank"] = df["pay_comfy"] - df["comp_max_bank"]
+    df["beacon_comfy"] = df["pay_comfy"]
+    df["beacon_market"] = df["comp_max_bank"]
+    df["beacon_proposed"] = None
     return df
 
 
@@ -115,9 +118,11 @@ def test_data_sheet_is_flat_and_filterable(tmp_path, example_xlsx_path):
     structure = ws.cell(row=3, column=heads["Структура (продажи)"]).value
     assert structure == pytest.approx(first_sales / total, rel=1e-6)
 
-    # обе колонки структуры и платежи конкурентов на месте
+    # обе колонки структуры, платежи конкурентов и кредитные маяки на месте
     for h in ("Структура (стоимость)", "Платежей Comfy", "Платежей Foxtrot",
-              "Откл. Comfy − конк.", "Comfy MAX (файл)"):
+              "Откл. Comfy − конк.", "Comfy MAX (файл)",
+              "КМ Comfy (ТОП банки)", "КМ рынка (ТОП банки)",
+              "Предлагаемый КМ"):
         assert h in heads, h
 
 
@@ -138,9 +143,13 @@ def test_export_from_fixtures_structure(tmp_path, dataset):
 
     data = wb[SHEET_DATA]
     heads = _headers(data)
-    skus = {str(data.cell(row=2 + i, column=heads["КодТовара"]).value)
+    rows = {str(data.cell(row=2 + i, column=heads["КодТовара"]).value): 2 + i
             for i in range(1, len(wide) + 1)}
-    assert len(skus) == 12
+    assert len(rows) == 12
+    # предлагаемый кредитный маяк: 20671 — рынок 15 (Приват/ПУМБ) → 15
+    r = rows["20671"]
+    assert data.cell(row=r, column=heads["Предлагаемый КМ"]).value == 15
+    assert data.cell(row=r, column=heads["КМ рынка (ТОП банки)"]).value == 15
 
 
 def test_multibank_export_sheet_names(tmp_path, dataset):

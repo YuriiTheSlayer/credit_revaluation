@@ -124,6 +124,9 @@ def _data_columns(has_sales: bool, competitor_names: dict[str, str]) -> list[_Co
     cols += [
         _Col("Конкуренты MAX", "comp_max_bank", True, "int", 9),
         _Col("Откл. Comfy − конк.", "dev_bank", True, "int", 9),
+        _Col("КМ Comfy (ТОП банки)", "beacon_comfy", True, "term", 9),
+        _Col("КМ рынка (ТОП банки)", "beacon_market", True, "term", 9),
+        _Col("Предлагаемый КМ", "beacon_proposed", True, "int", 10),
         _Col("Comfy MAX (файл)", "comfy_max", True, "int", 9),
         _Col("Скидка", "discount", True, "number", 8),
         _Col("Маржа кредитная", "margin", True, "percent", 9),

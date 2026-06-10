@@ -58,6 +58,8 @@ def test_dashboard_builds_kpi_table_charts(dash):
     assert len(dash.kpi_row.controls) >= 4          # SKU, Comfy, конкуренты…
     assert dash.table.visible and len(dash.table.rows) == 12
     assert dash.charts_tabs.visible
+    headers = [c.label.value for c in dash.table.columns]
+    assert "Предл. КМ" in headers                   # предлагаемый кредитный маяк
 
 
 def test_filter_options_distinct_from_file(dash):

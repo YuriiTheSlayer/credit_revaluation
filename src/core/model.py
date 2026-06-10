@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from core.beacon import compute_beacons
 from core.mapping import BrandOverride, ComfyMapping
 from parsers.competitors import CompetitorsData, competitor_display_name
 from parsers.sales import SalesData
@@ -139,6 +140,9 @@ class Dataset:
             comp_max = pd.Series(pd.NA, index=wide.index, dtype="Float64")
         wide["comp_max_bank"] = comp_max
         wide["dev_bank"] = wide[PAY_COMFY] - comp_max
+
+        # кредитные маяки (не зависят от выбранного банка: всегда ТОП банки)
+        wide = wide.join(compute_beacons(long, self.banks, brand_override))
 
         if self.sales is not None:
             sales_map = self.sales.df.set_index("sku")["sales"]

@@ -843,7 +843,8 @@ class Dashboard:
             (PAY_COMFY, "Comfy", True),
         ]
         columns += [(pay_col(d), disp, True) for d, disp in names.items()]
-        columns += [("dev_bank", "Откл.", True)]
+        columns += [("dev_bank", "Откл.", True),
+                    ("beacon_proposed", "Предл. КМ", True)]
 
         def _sort_key(s: pd.Series) -> pd.Series:
             if s.name == "sku":
@@ -889,7 +890,8 @@ class Dashboard:
                     cells.append(ft.DataCell(ft.Text(f"{val:.2%}")))
                 elif field in ("sales", "price"):
                     cells.append(ft.DataCell(ft.Text(w.fmt_money(val))))
-                elif field == PAY_COMFY or field.startswith("pay::"):
+                elif (field == PAY_COMFY or field == "beacon_proposed"
+                        or field.startswith("pay::")):
                     cells.append(ft.DataCell(ft.Text(
                         "—" if pd.isna(val) else f"{val:.0f}",
                         color=w.MUTED if pd.isna(val) else None)))
