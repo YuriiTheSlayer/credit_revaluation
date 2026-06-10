@@ -131,3 +131,33 @@ def test_mapping_dialog_builds(dash):
     assert dash.page.opened, "диалог маппинга должен открыться"
     dialog = dash.page.opened[-1]
     assert "Маппинг" in dialog.title.value
+
+
+def _walk(control):
+    yield control
+    for attr in ("controls", "content", "tabs"):
+        value = getattr(control, attr, None)
+        if value is None:
+            continue
+        children = value if isinstance(value, list) else [value]
+        for child in children:
+            if hasattr(child, "_get_control_name") or hasattr(child, "controls") \
+                    or hasattr(child, "content"):
+                yield from _walk(child)
+
+
+def test_no_expand_inside_wrap_rows(dash):
+    """Flutter Wrap не поддерживает expand: такой ребёнок раздувается в
+    гигантский пустой блок и выталкивает контент за экран (регрессия макета)."""
+    import flet as ft
+
+    wrap_rows = [
+        c for root in dash.page.controls for c in _walk(root)
+        if isinstance(c, ft.Row) and getattr(c, "wrap", False)
+    ]
+    assert wrap_rows, "ожидали хотя бы один wrap-Row (фильтры, KPI)"
+    for row in wrap_rows:
+        for child in row.controls:
+            assert not getattr(child, "expand", None), (
+                f"expand внутри wrap-Row ломает layout: {child}"
+            )

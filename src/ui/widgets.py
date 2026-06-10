@@ -35,31 +35,28 @@ def build_theme() -> ft.Theme:
     )
 
 
-def brand_header() -> ft.Container:
-    """Шапка приложения: словесный знак COMFY + название продукта."""
+def brand_header() -> ft.Row:
+    """Словесный знак COMFY + название продукта (для шапки приложения)."""
     wordmark = ft.Container(
-        ft.Text("COMFY", size=16, weight=ft.FontWeight.W_800, color="#FFFFFF"),
+        ft.Text("COMFY", size=15, weight=ft.FontWeight.W_800, color="#FFFFFF"),
         bgcolor=brand.GREEN,
-        padding=ft.padding.symmetric(6, 14),
+        padding=ft.padding.symmetric(6, 13),
         border_radius=8,
     )
-    return ft.Container(
-        ft.Row(
-            [
-                wordmark,
-                ft.Column(
-                    [
-                        ft.Text(brand.APP_TITLE, size=15,
-                                weight=ft.FontWeight.W_700, color=brand.GRAPHITE),
-                        ft.Text(brand.APP_SUBTITLE, size=11, color=MUTED),
-                    ],
-                    spacing=0, tight=True,
-                ),
-            ],
-            spacing=12,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        padding=ft.padding.only(bottom=2),
+    return ft.Row(
+        [
+            wordmark,
+            ft.Column(
+                [
+                    ft.Text(brand.APP_TITLE, size=14,
+                            weight=ft.FontWeight.W_700, color=brand.GRAPHITE),
+                    ft.Text(brand.APP_SUBTITLE, size=11, color=MUTED),
+                ],
+                spacing=0, tight=True,
+            ),
+        ],
+        spacing=12,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
 
@@ -106,31 +103,17 @@ def kpi_card(title: str, value: str, subtitle: str = "",
     )
 
 
-def upload_zone(title: str, hint: str, icon: str, on_click) -> tuple[ft.Container, ft.Text]:
-    """Зона загрузки файла (клик → диалог выбора). → (контейнер, текст статуса)."""
-    status = ft.Text(hint, size=11, color=MUTED)
-    zone = ft.Container(
-        content=ft.Column(
-            [
-                ft.Icon(icon, size=28, color=ACCENT),
-                ft.Text(title, weight=ft.FontWeight.W_600, size=13,
-                        color=brand.GRAPHITE),
-                status,
-            ],
-            spacing=4,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            tight=True,
-        ),
-        padding=14,
-        border=ft.border.all(2, brand.OUTLINE),
-        border_radius=12,
+def section_card(*controls: ft.Control, visible: bool = True,
+                 padding: int = 12) -> ft.Container:
+    """Белая карточка-секция: рамка, скругление — единый вид блоков контента."""
+    return ft.Container(
+        content=ft.Column(list(controls), spacing=8, tight=True),
         bgcolor=brand.SURFACE,
-        ink=True,
-        on_click=on_click,
-        expand=True,
-        alignment=ft.alignment.center,
+        border=ft.border.all(1, brand.OUTLINE),
+        border_radius=12,
+        padding=padding,
+        visible=visible,
     )
-    return zone, status
 
 
 class MultiSelect:
