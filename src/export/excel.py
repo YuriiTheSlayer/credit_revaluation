@@ -59,15 +59,18 @@ def _sheet_name(base: str, bank: str | None, used: set[str]) -> str:
 
 
 class _Formats:
-    """Форматы в корпоративной палитре Comfy (см. ``core/brand.py``)."""
+    """Форматы в корпоративной палитре Comfy (см. ``core/brand.py``):
+    шапка — как в корпоративных таблицах (светлый фон, графитовый текст,
+    зелёная линия-акцент), подложки выделения — greenSoft/orangeSoft."""
 
     def __init__(self, wb: xlsxwriter.Workbook):
         header_style = {
-            "bold": True, "bg_color": brand.GREEN, "font_color": "#FFFFFF",
-            "border": 1, "border_color": brand.GREEN_DARK,
+            "bold": True, "bg_color": brand.BG, "font_color": brand.DARK_GRAY,
+            "border": 1, "border_color": brand.OUTLINE,
+            "bottom": 2, "bottom_color": brand.GREEN,
             "text_wrap": True, "valign": "vcenter",
         }
-        self.title = wb.add_format({"italic": True, "font_color": "#595959"})
+        self.title = wb.add_format({"italic": True, "font_color": brand.MUTED})
         self.header = wb.add_format({**header_style, "align": "center"})
         self.header_left = wb.add_format(header_style)
         self.text = wb.add_format({})
@@ -85,7 +88,7 @@ class _Formats:
         self.bold_term = wb.add_format({**total_style, "num_format": "0.00"})
         self.bold_share = wb.add_format({**total_style, "num_format": "0%"})
         self.cf_bad = wb.add_format({"bg_color": brand.RED_TINT,
-                                     "font_color": "#9C0006"})
+                                     "font_color": brand.RED})
         self.cf_good = wb.add_format({"bg_color": brand.GREEN_TINT,
                                       "font_color": brand.GREEN_DARK})
         self.cf_band = wb.add_format({"bg_color": brand.GREEN_ZEBRA})

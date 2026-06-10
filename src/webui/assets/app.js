@@ -87,9 +87,10 @@ function applyTokens(tokens) {
   if (!tokens) return;
   const map = {
     green: "--green", greenDark: "--green-dark", greenTint: "--green-tint",
-    graphite: "--graphite", muted: "--muted", bg: "--bg", surface: "--surface",
+    graphite: "--graphite", darkGray: "--dark-gray", nearBlack: "--near-black",
+    muted: "--muted", bg: "--bg", surface: "--surface",
     outline: "--outline", orange: "--orange", orangeTint: "--orange-tint",
-    red: "--red", redTint: "--red-tint",
+    red: "--red", redTint: "--red-tint", font: "--font",
   };
   for (const [key, cssVar] of Object.entries(map)) {
     if (tokens[key]) document.documentElement.style.setProperty(cssVar, tokens[key]);

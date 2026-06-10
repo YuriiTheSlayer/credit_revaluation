@@ -334,10 +334,11 @@ class Api:
             "brandTokens": {
                 "green": brand.GREEN, "greenDark": brand.GREEN_DARK,
                 "greenTint": brand.GREEN_TINT, "graphite": brand.GRAPHITE,
+                "darkGray": brand.DARK_GRAY, "nearBlack": brand.NEAR_BLACK,
                 "muted": brand.MUTED, "bg": brand.BG, "surface": brand.SURFACE,
                 "outline": brand.OUTLINE, "orange": brand.ORANGE,
                 "orangeTint": brand.ORANGE_TINT, "red": brand.RED,
-                "redTint": brand.RED_TINT,
+                "redTint": brand.RED_TINT, "font": brand.FONT_STACK,
             },
             "appTitle": brand.APP_TITLE,
             "appSubtitle": brand.APP_SUBTITLE,
