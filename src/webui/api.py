@@ -359,7 +359,7 @@ class Api:
                             "labels": _FILTER_LABELS,
                             "selected": {f: [] for f in _FILTER_FIELDS},
                             "search": "", "completeOnly": False},
-                "kpi": [], "charts": None, "table": None,
+                "kpi": [], "charts": None, "table": None, "avgView": None,
                 "mapping": self._mapping_state(), "apple": self._apple_state(),
             })
             return base
@@ -378,6 +378,7 @@ class Api:
             "kpi": self._kpi(filtered, value_col, names, pay_cols),
             "charts": self._charts(filtered, value_col, names, pay_cols),
             "table": self._table(filtered, value_col, names),
+            "avgView": self._avg_view(filtered, names, pay_cols),
             "mapping": self._mapping_state(),
             "apple": self._apple_state(),
         })
@@ -472,6 +473,47 @@ class Api:
             "terms": {"categories": [str(c) for c in terms.index],
                       "series": series, "hint": hint},
             "dev": {"items": dev_items},
+        }
+
+    def _avg_view(self, filtered, names, pay_cols) -> dict | None:
+        """Третий разрез: невзвешенный средний срок и средний платёж
+        (цена/срок) по категориям в разрезе выбранного банка."""
+        if not len(filtered):
+            return None
+        terms, payments = metrics.average_terms_and_payments(filtered, pay_cols)
+        tmp = filtered.copy()
+        tmp["__all__"] = "all"
+        terms_all, payments_all = metrics.average_terms_and_payments(
+            tmp, pay_cols, by="__all__")
+
+        base_col = "sales" if self.dataset.has_sales else "price"
+        order = (filtered.groupby("category")[base_col].sum()
+                 .sort_values(ascending=False).index)
+        counts = filtered.groupby("category").size()
+        price_mean = filtered.groupby("category")["price"].mean()
+
+        def row(label, count, price, term_row, payment_row) -> dict:
+            return {
+                "category": label,
+                "count": int(count),
+                "avgPrice": _val(price),
+                "terms": {k: _val(term_row.get(k)) for k in pay_cols},
+                "payments": {k: _val(payment_row.get(k)) for k in pay_cols},
+            }
+
+        return {
+            "retailers": [{"key": PAY_COMFY, "name": "Comfy"}] + [
+                {"key": pay_col(d), "name": disp} for d, disp in names.items()
+            ],
+            "overall": row("Вся выборка", len(filtered),
+                           filtered["price"].mean(),
+                           terms_all.iloc[0], payments_all.iloc[0]),
+            "rows": [
+                row(str(cat), counts.get(cat, 0), price_mean.get(cat),
+                    terms.loc[cat] if cat in terms.index else {},
+                    payments.loc[cat] if cat in payments.index else {})
+                for cat in order
+            ],
         }
 
     def _table(self, filtered, value_col, names) -> dict:

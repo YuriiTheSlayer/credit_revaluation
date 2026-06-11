@@ -70,6 +70,38 @@ def overall_terms(
     return res.iloc[0]
 
 
+def average_terms_and_payments(
+    wide: pd.DataFrame,
+    pay_cols: list[str],
+    by: str = "category",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Третий разрез отчёта: невзвешенные средние внутри категории.
+
+    Для каждого ритейлера (Comfy и конкуренты) в разрезе выбранного банка:
+
+    * **средний срок** — простое среднее «кол-во платежей» по SKU категории,
+      у которых есть данные этого ритейлера;
+    * **средний платёж** — средняя стоимость / средний срок; средняя
+      стоимость считается по той же базе SKU, что и срок ритейлера, чтобы
+      числитель и знаменатель относились к одному набору товаров.
+
+    Возвращает (terms, payments): DataFrame, индекс — категория,
+    колонки — ``pay_cols``. NaN — у ритейлера нет данных в категории.
+    """
+    groups = wide[by]
+    price = wide["price"].astype("Float64").astype(float)
+    terms: dict[str, pd.Series] = {}
+    payments: dict[str, pd.Series] = {}
+    for col in pay_cols:
+        pay = wide[col].astype("Float64").astype(float)
+        has_data = pay.notna()
+        term_mean = pay[has_data].groupby(groups[has_data]).mean()
+        price_mean = price[has_data].groupby(groups[has_data]).mean()
+        terms[col] = term_mean
+        payments[col] = price_mean.divide(term_mean.where(term_mean > 0))
+    return pd.DataFrame(terms), pd.DataFrame(payments)
+
+
 def win_share(wide: pd.DataFrame, by: str = "category") -> pd.Series:
     """Доля SKU, где Comfy ≥ лучшего конкурента (по выбранному банку).
 

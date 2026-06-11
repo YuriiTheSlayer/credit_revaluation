@@ -6,7 +6,13 @@ import pytest
 
 from core.mapping import BrandOverride, ComfyMapping
 from core.model import ALL_BANKS, Dataset
-from export.excel import SHEET_DATA, SHEET_SUMMARY, default_filename, export_report
+from export.excel import (
+    SHEET_AVG,
+    SHEET_DATA,
+    SHEET_SUMMARY,
+    default_filename,
+    export_report,
+)
 from parsers.competitors import parse_competitors_csv
 from parsers.sales import parse_sales
 from test_metrics import load_reference_sales
@@ -61,7 +67,7 @@ def test_reference_totals_on_summary_sheet(tmp_path, example_xlsx_path):
     export_report(out, [("Monobank", wide)], REF_NAMES, has_sales=True)
 
     wb = openpyxl.load_workbook(out)
-    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_DATA]
+    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_AVG, SHEET_DATA]
     ws = wb[SHEET_SUMMARY]
     heads = _headers(ws)
 
@@ -133,7 +139,7 @@ def test_export_from_fixtures_structure(tmp_path, dataset):
     export_report(out, [(bank, wide)], dataset.competitor_names(), has_sales=True)
 
     wb = openpyxl.load_workbook(out)
-    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_DATA]
+    assert wb.sheetnames == [SHEET_SUMMARY, SHEET_AVG, SHEET_DATA]
 
     summary = wb[SHEET_SUMMARY]
     n_categories = wide["category"].nunique()
@@ -157,7 +163,7 @@ def test_multibank_export_sheet_names(tmp_path, dataset):
     out = tmp_path / "multi.xlsx"
     export_report(out, frames, dataset.competitor_names(), has_sales=True)
     wb = openpyxl.load_workbook(out)
-    assert len(wb.sheetnames) == 2 * len(frames)
+    assert len(wb.sheetnames) == 3 * len(frames)
     assert all(len(n) <= 31 for n in wb.sheetnames)
     assert any("Monobank" in n for n in wb.sheetnames)
     assert any("ПУМБ" in n for n in wb.sheetnames)
@@ -223,3 +229,33 @@ def test_export_empty_frame_writes_stub(tmp_path, dataset):
     wb = openpyxl.load_workbook(out)
     assert "Нет данных" in str(wb[SHEET_DATA]["A3"].value)
     assert "Нет данных" in str(wb[SHEET_SUMMARY]["A3"].value)
+    assert "Нет данных" in str(wb[SHEET_AVG]["A3"].value)
+
+
+def test_avg_sheet_terms_and_payments(tmp_path, kniga_path):
+    """Лист «Срок и платёж»: простые средние и платёж = ср. цена / ср. срок."""
+    ds = Dataset(parse_competitors_csv(kniga_path))
+    wide = ds.wide("Monobank")
+    out = tmp_path / "avg.xlsx"
+    export_report(out, [("Monobank", wide)], ds.competitor_names(),
+                  has_sales=False)
+
+    ws = openpyxl.load_workbook(out)[SHEET_AVG]
+    heads = _headers(ws)
+    assert "Comfy\nср. срок" in heads
+    assert "Foxtrot\nср. платёж, грн" in heads
+    assert ws.cell(row=3, column=1).value == "Вся выборка"
+
+    rows = {ws.cell(row=r, column=1).value: r for r in range(4, 4 + 12)}
+    r = rows["Пилосос традиційний"]
+    avg_price = (6649 + 9599 + 9599) / 3
+    assert ws.cell(row=r, column=heads["SKU, шт"]).value == 3
+    assert ws.cell(row=r, column=heads["Ср. цена, грн"]).value == pytest.approx(avg_price)
+    assert ws.cell(row=r, column=heads["Comfy\nср. срок"]).value == pytest.approx(10)
+    assert ws.cell(row=r, column=heads["Comfy\nср. платёж, грн"]).value == \
+        pytest.approx(avg_price / 10)
+    assert ws.cell(row=r, column=heads["Foxtrot\nср. срок"]).value == pytest.approx(6)
+    assert ws.cell(row=r, column=heads["Rozetka\nср. срок"]).value == pytest.approx(3.5)
+    # база цены rozetka — только SKU с её данными (9599, 9599)
+    assert ws.cell(row=r, column=heads["Rozetka\nср. платёж, грн"]).value == \
+        pytest.approx(9599 / 3.5)

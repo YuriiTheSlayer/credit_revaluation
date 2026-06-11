@@ -130,6 +130,44 @@ def test_filters_renormalize_weights(kniga_path, sales_path):
             assert s == pytest.approx(1), f"веса категории {cat} должны давать 1"
 
 
+def test_average_terms_and_payments_fixture_values(kniga_path):
+    """Третий разрез: простые средние и платёж = ср. цена / ср. срок.
+
+    Категория «Пилосос традиційний», Monobank: цены 6649/9599/9599,
+    Comfy 10/10/10, foxtrot 6/6/6, rozetka — только 20676 (3) и 901657 (4).
+    """
+    ds = Dataset(parse_competitors_csv(kniga_path))
+    wide = ds.wide("Monobank")
+    sub = wide[wide["category"] == "Пилосос традиційний"]
+    pay_cols = ["pay_comfy", "pay::foxtrot.com.ua", "pay::rozetka.com.ua"]
+    terms, payments = metrics.average_terms_and_payments(sub, pay_cols)
+
+    row_t = terms.loc["Пилосос традиційний"]
+    row_p = payments.loc["Пилосос традиційний"]
+    avg_price_all = (6649 + 9599 + 9599) / 3            # база: все 3 SKU
+
+    assert row_t["pay_comfy"] == pytest.approx(10)
+    assert row_p["pay_comfy"] == pytest.approx(avg_price_all / 10)
+
+    assert row_t["pay::foxtrot.com.ua"] == pytest.approx(6)
+    assert row_p["pay::foxtrot.com.ua"] == pytest.approx(avg_price_all / 6)
+
+    # у rozetka данных нет по 20671 → база цены сужается до 2 SKU
+    assert row_t["pay::rozetka.com.ua"] == pytest.approx(3.5)
+    assert row_p["pay::rozetka.com.ua"] == pytest.approx(9599 / 3.5)
+
+
+def test_average_payments_nan_without_data():
+    df = pd.DataFrame({
+        "category": ["A", "A"],
+        "price": [100.0, 200.0],
+        "pay_x": [None, None],
+    })
+    terms, payments = metrics.average_terms_and_payments(df, ["pay_x"])
+    assert terms.empty or pd.isna(terms.get("pay_x", pd.Series(dtype=float)).get("A"))
+    assert payments.empty or pd.isna(payments.get("pay_x", pd.Series(dtype=float)).get("A"))
+
+
 def test_overall_terms_and_win_share(kniga_path, sales_path):
     dataset = Dataset(parse_competitors_csv(kniga_path)).attach_sales(parse_sales(sales_path))
     wide = dataset.wide(ALL_BANKS)

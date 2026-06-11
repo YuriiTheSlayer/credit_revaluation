@@ -127,11 +127,11 @@ def test_export_to_writes_workbook(api, tmp_path):
     snap = api.export_to(str(out), all_banks=False)
     assert "error" not in snap and snap["saved"]
     wb = openpyxl.load_workbook(out)
-    assert wb.sheetnames == ["Сводка", "Данные"]
+    assert wb.sheetnames == ["Сводка", "Срок и платёж", "Данные"]
 
     snap = api.export_to(str(tmp_path / "multi.xlsx"), all_banks=True)
     wb = openpyxl.load_workbook(tmp_path / "multi.xlsx")
-    assert len(wb.sheetnames) == 2 * (len(api.dataset.banks) + 1)
+    assert len(wb.sheetnames) == 3 * (len(api.dataset.banks) + 1)
 
 
 def test_load_dropped_detects_file_kind(tmp_path, kniga_path, sales_path):
@@ -141,6 +141,28 @@ def test_load_dropped_detects_file_kind(tmp_path, kniga_path, sales_path):
     snap = a.load_dropped(str(sales_path))     # csv продаж → фолбэк
     assert snap["hasSales"] is True
     assert "error" not in snap
+
+
+def test_avg_view_in_snapshot(api):
+    snap = api.boot()
+    view = snap["avgView"]
+    assert view is not None
+    assert view["retailers"][0]["name"] == "Comfy"
+    assert view["overall"]["category"] == "Вся выборка"
+    rows = {r["category"]: r for r in view["rows"]}
+    row = rows["Пилосос традиційний"]
+    avg_price = (6649 + 9599 + 9599) / 3
+    assert row["count"] == 3
+    assert row["terms"]["pay_comfy"] == pytest.approx(10)
+    assert row["payments"]["pay_comfy"] == pytest.approx(avg_price / 10)
+    assert row["terms"]["pay::rozetka.com.ua"] == pytest.approx(3.5)
+    assert row["payments"]["pay::rozetka.com.ua"] == pytest.approx(9599 / 3.5)
+    json.dumps(snap, allow_nan=False)
+
+    # разрез следует за выбранным банком
+    privat = api.set_bank("ПриватБанк")["avgView"]
+    privat_row = {r["category"]: r for r in privat["rows"]}["Пилосос традиційний"]
+    assert privat_row["terms"]["pay::foxtrot.com.ua"] == pytest.approx(15)
 
 
 def test_kpi_values_match_metrics(api):

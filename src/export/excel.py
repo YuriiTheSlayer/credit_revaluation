@@ -33,6 +33,7 @@ from core.mapping import BrandOverride, ComfyMapping
 from core.model import PAY_COMFY, pay_col
 
 SHEET_SUMMARY = "Сводка"
+SHEET_AVG = "Срок и платёж"
 SHEET_DATA = "Данные"
 
 
@@ -368,6 +369,116 @@ def _write_summary_sheet(
 
 
 # ---------------------------------------------------------------------------
+# лист «Срок и платёж» (невзвешенные средние + средний платёж)
+# ---------------------------------------------------------------------------
+
+def _write_avg_sheet(
+    wb: xlsxwriter.Workbook,
+    fmts: _Formats,
+    sheet_name: str,
+    wide: pd.DataFrame,
+    has_sales: bool,
+    competitor_names: dict[str, str],
+    bank: str,
+    filters_desc: str,
+    generated: date,
+    mapping: ComfyMapping | None,
+    brand_override: BrandOverride | None,
+) -> None:
+    """Третий разрез: средний срок и средний платёж (цена/срок) по категориям
+    в разрезе выбранного банка; средние — простые, без весов (§10.10)."""
+    ws = wb.add_worksheet(sheet_name)
+    retailers = [(PAY_COMFY, "Comfy")] + [
+        (pay_col(d), disp) for d, disp in competitor_names.items()
+    ]
+    pay_cols = [key for key, _ in retailers]
+
+    headers: list[tuple[str, str, int]] = [
+        ("Категория", "header_left", 32),
+        ("SKU, шт", "header", 8),
+        ("Ср. цена, грн", "header", 12),
+    ]
+    for _, disp in retailers:
+        headers.append((f"{disp}\nср. срок", "header", 10))
+    for _, disp in retailers:
+        headers.append((f"{disp}\nср. платёж, грн", "header", 12))
+
+    ws.write_string(0, 0, _title(bank, filters_desc, generated, mapping,
+                                 brand_override), fmts.title)
+    ws.set_row(1, 44)
+    for c, (text, fmt, width) in enumerate(headers):
+        ws.write_string(1, c, text, getattr(fmts, fmt))
+        ws.set_column(c, c, width)
+    ws.freeze_panes(2, 1)
+
+    if not len(wide):
+        ws.write_string(2, 0, "Нет данных: проверьте фильтры и выбранный банк.",
+                        fmts.title)
+        return
+
+    terms, payments = metrics.average_terms_and_payments(wide, pay_cols)
+    tmp = wide.copy()
+    tmp["__all__"] = "all"
+    terms_all, payments_all = metrics.average_terms_and_payments(
+        tmp, pay_cols, by="__all__")
+
+    counts = wide.groupby("category").size()
+    price_mean = wide.groupby("category")["price"].mean()
+    base_col = "sales" if has_sales else "price"
+    order = (
+        wide.groupby("category")[base_col].sum().sort_values(ascending=False).index
+    )
+
+    def write_row(er: int, label: str, count: int, avg_price,
+                  term_row, payment_row, bold: bool) -> None:
+        f_text = fmts.bold_text if bold else fmts.text
+        f_int = fmts.bold_int if bold else fmts.int
+        f_val = fmts.bold_value if bold else fmts.value
+        f_term = fmts.bold_term if bold else fmts.term
+        c = 0
+        ws.write_string(er, c, label, f_text); c += 1
+        ws.write_number(er, c, int(count), f_int); c += 1
+        if avg_price is not None and not pd.isna(avg_price):
+            ws.write_number(er, c, float(avg_price), f_val)
+        c += 1
+        for key, _ in retailers:
+            v = term_row.get(key)
+            if v is not None and not pd.isna(v):
+                ws.write_number(er, c, float(v), f_term)
+            c += 1
+        for key, _ in retailers:
+            v = payment_row.get(key)
+            if v is not None and not pd.isna(v):
+                ws.write_number(er, c, float(v), f_val)
+            c += 1
+
+    write_row(2, "Вся выборка", len(wide), float(wide["price"].mean()),
+              terms_all.iloc[0], payments_all.iloc[0], bold=True)
+    for i, cat in enumerate(order):
+        term_row = terms.loc[cat] if cat in terms.index else {}
+        payment_row = payments.loc[cat] if cat in payments.index else {}
+        write_row(3 + i, str(cat), counts.get(cat, 0), price_mean.get(cat),
+                  term_row, payment_row, bold=False)
+
+    # конкурент даёт срок дольше / платёж ниже, чем Comfy → проигрываем
+    last_er = 3 + len(order)
+    n_ret = len(retailers)
+    if n_ret >= 2:
+        term_comfy_idx, pay_comfy_idx = 3, 3 + n_ret
+        for block_start, cmp_op in ((term_comfy_idx, ">"), (pay_comfy_idx, "<")):
+            comfy_letter = xl_col_to_name(block_start)
+            first = xl_col_to_name(block_start + 1)
+            last = xl_col_to_name(block_start + n_ret - 1)
+            ws.conditional_format(f"{first}3:{last}{last_er}", {
+                "type": "formula",
+                "criteria": (f"=AND(ISNUMBER({first}3),"
+                             f"ISNUMBER(${comfy_letter}3),"
+                             f"{first}3{cmp_op}${comfy_letter}3)"),
+                "format": fmts.cf_bad,
+            })
+
+
+# ---------------------------------------------------------------------------
 # публичный API
 # ---------------------------------------------------------------------------
 
@@ -406,6 +517,10 @@ def export_report(
                     generated, mapping, brand_override)
             _write_summary_sheet(
                 wb, fmts, _sheet_name(SHEET_SUMMARY, None if single else bank, used),
+                *args,
+            )
+            _write_avg_sheet(
+                wb, fmts, _sheet_name(SHEET_AVG, None if single else bank, used),
                 *args,
             )
             _write_data_sheet(

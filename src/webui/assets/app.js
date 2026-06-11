@@ -348,6 +348,55 @@ function renderCharts() {
   if (!show) { hideTip(); return; }
   renderTermsChart($("#chartTerms"), S.charts.terms);
   renderDevChart($("#chartDev"), S.charts.dev);
+  renderAvgView($("#chartAvg"), S.avgView);
+}
+
+/* третий разрез: невзвешенный средний срок + средний платёж (цена/срок) */
+function renderAvgView(host, view) {
+  if (!view || !view.rows.length) {
+    host.innerHTML = '<p class="muted">Нет данных.</p>';
+    return;
+  }
+  const fmtTerm = (v) => v == null ? "—" : v.toFixed(2);
+  const comfyKey = view.retailers[0].key;
+
+  const headGroups = view.retailers.map((r) =>
+    `<th class="num grp" colspan="2">${esc(r.name)}</th>`).join("");
+  const headSub = view.retailers.map(() =>
+    `<th class="num">Срок</th><th class="num">Платёж</th>`).join("");
+
+  const rowHTML = (r, bold) => {
+    const comfyTerm = r.terms[comfyKey];
+    const comfyPay = r.payments[comfyKey];
+    const cells = view.retailers.map((ret) => {
+      const t = r.terms[ret.key], p = r.payments[ret.key];
+      // конкурент даёт срок дольше / платёж ниже Comfy → проигрываем
+      const tBad = ret.key !== comfyKey && t != null && comfyTerm != null && t > comfyTerm;
+      const pBad = ret.key !== comfyKey && p != null && comfyPay != null && p < comfyPay;
+      return `<td class="num${tBad ? " bad" : ""}">${fmtTerm(t)}</td>`
+        + `<td class="num${pBad ? " bad" : ""}">${fmtMoney(p)}</td>`;
+    }).join("");
+    return `<tr${bold ? ' class="bold"' : ""}>`
+      + `<td class="name" title="${esc(r.category)}">${esc(r.category)}</td>`
+      + `<td class="num">${r.count}</td>`
+      + `<td class="num">${fmtMoney(r.avgPrice)}</td>${cells}</tr>`;
+  };
+
+  host.innerHTML = `
+    <p class="muted" style="font-size:11px;margin:0 0 8px">
+      Простые средние внутри категории (банк: ${esc(S.bank)});
+      средний платёж = средняя цена / средний срок по SKU с данными ритейлера.
+      Красным — конкурент выгоднее (дольше срок или ниже платёж).</p>
+    <div class="avg-wrap">
+      <table class="avg-table">
+        <thead>
+          <tr><th rowspan="2">Категория</th><th class="num" rowspan="2">SKU</th>
+              <th class="num" rowspan="2">Ср. цена</th>${headGroups}</tr>
+          <tr>${headSub}</tr>
+        </thead>
+        <tbody>${rowHTML(view.overall, true)}${view.rows.map((r) => rowHTML(r, false)).join("")}</tbody>
+      </table>
+    </div>`;
 }
 
 function chartScale(maxValue, height, padTop) {
@@ -734,6 +783,7 @@ function bindStatic() {
       tab.classList.add("active");
       $("#chartTerms").classList.toggle("hidden", tab.dataset.tab !== "terms");
       $("#chartDev").classList.toggle("hidden", tab.dataset.tab !== "dev");
+      $("#chartAvg").classList.toggle("hidden", tab.dataset.tab !== "avg");
       if (S && S.charts) renderCharts();
     };
   });
