@@ -73,6 +73,13 @@ def test_filters_multiselect_and_search(dataset):
     by_sku = Filters(search="20671").apply(wide)
     assert list(by_sku["sku"]) == ["20671"]
 
+    # несколько значений через запятую — поиск по принципу «ИЛИ»
+    by_list = Filters(search="20671, 925595").apply(wide)
+    assert set(by_list["sku"]) == {"20671", "925595"}
+    mixed = Filters(search="ROMA, INOX").apply(wide)
+    assert set(mixed["sku"]) == {"20671", "502865", "508689", "910510", "913162"}
+    assert len(Filters(search=" , ,").apply(wide)) == len(wide)  # только запятые
+
 
 def test_filters_describe(dataset):
     assert Filters().describe() == "без фильтров"

@@ -206,10 +206,16 @@ class Filters:
                 mask &= wide[col].isin(selected)
         text = self.search.strip().lower()
         if text:
-            mask &= (
-                wide["name"].astype(str).str.lower().str.contains(text, regex=False)
-                | wide["sku"].astype(str).str.contains(text, regex=False)
-            )
+            # несколько значений через запятую — ищем по принципу «ИЛИ»
+            terms = [t.strip() for t in text.split(",") if t.strip()]
+            if terms:
+                names = wide["name"].astype(str).str.lower()
+                skus = wide["sku"].astype(str)
+                found = pd.Series(False, index=wide.index)
+                for term in terms:
+                    found |= (names.str.contains(term, regex=False)
+                              | skus.str.contains(term, regex=False))
+                mask &= found
         if self.complete_competitors_only:
             comp_cols = [c for c in wide.columns if c.startswith(PAY_PREFIX)]
             if comp_cols:

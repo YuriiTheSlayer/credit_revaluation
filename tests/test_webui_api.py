@@ -70,6 +70,8 @@ def test_filters_and_search(api):
     assert snap["table"]["total"] == 3
     snap = api.set_filters({"search": "ROMA"})
     assert 3 <= snap["table"]["total"] <= 4
+    snap = api.set_filters({"search": "20671, 925595"})   # список через запятую
+    assert snap["table"]["total"] == 2
     snap = api.reset_filters()
     assert snap["table"]["total"] == 12
     assert snap["filters"]["activeCount"] == 0

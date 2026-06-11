@@ -167,20 +167,39 @@ function buildMultiselect(field) {
   const panel = document.createElement("div");
   panel.className = "ms-panel hidden";
   panel.innerHTML = `
-    <input type="text" placeholder="Поиск значения…">
+    <input type="text" placeholder="Поиск… (несколько — через запятую)">
+    <div class="ms-count muted"></div>
     <div class="ms-list"></div>
     <div class="ms-actions">
+      <button class="btn text">Выбрать все</button>
       <button class="btn text">Сбросить</button>
+      <span class="spacer"></span>
       <button class="btn primary">Готово</button>
     </div>`;
   wrap.appendChild(panel);
 
   const list = panel.querySelector(".ms-list");
+  const countEl = panel.querySelector(".ms-count");
+  let currentQuery = "";
+
+  // «пилосос, витяжка» → подходит всё, что содержит любой из терминов
+  const matches = (opt, query) => {
+    const terms = query.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (!terms.length) return true;
+    const low = opt.toLowerCase();
+    return terms.some((t) => low.includes(t));
+  };
+  const visibleOptions = () => options.filter((o) => matches(o, currentQuery));
+  const updateCount = () => {
+    const visible = visibleOptions().length;
+    countEl.textContent =
+      `показано ${visible} из ${options.length} · выбрано ${msState[field].size}`;
+  };
+
   const drawList = (query = "") => {
-    const q = query.trim().toLowerCase();
+    currentQuery = query;
     list.innerHTML = "";
-    for (const opt of options) {
-      if (q && !opt.toLowerCase().includes(q)) continue;
+    for (const opt of visibleOptions()) {
       const item = document.createElement("label");
       const cb = document.createElement("input");
       cb.type = "checkbox";
@@ -188,15 +207,29 @@ function buildMultiselect(field) {
       cb.onchange = () => {
         cb.checked ? msState[field].add(opt) : msState[field].delete(opt);
         sync();
+        updateCount();
       };
       item.appendChild(cb);
       item.appendChild(document.createTextNode(opt));
       list.appendChild(item);
     }
+    updateCount();
   };
   panel.querySelector("input").oninput = (e) => drawList(e.target.value);
-  const [resetBtn, doneBtn] = panel.querySelectorAll(".ms-actions .btn");
-  resetBtn.onclick = () => { msState[field].clear(); drawList(); sync(); };
+
+  const [selectAllBtn, resetBtn, doneBtn] =
+    panel.querySelectorAll(".ms-actions .btn");
+  selectAllBtn.onclick = () => {
+    // выбираем только то, что прошло текущий поиск панели
+    for (const opt of visibleOptions()) msState[field].add(opt);
+    drawList(currentQuery);
+    sync();
+  };
+  resetBtn.onclick = () => {
+    msState[field].clear();
+    drawList(currentQuery);
+    sync();
+  };
   doneBtn.onclick = () => { closePanels(); applyFilters(); };
 
   btn.onclick = (e) => {

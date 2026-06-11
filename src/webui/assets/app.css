@@ -175,6 +175,7 @@ body {
   padding: 7px 10px; font-size: 13px; font-family: inherit; outline: none;
 }
 .ms-panel input[type="text"]:focus { border-color: var(--green); }
+.ms-count { font-size: 11px; margin-top: 6px; }
 .ms-list { max-height: 250px; overflow: auto; margin: 8px 0; }
 .ms-list label {
   display: flex; align-items: center; gap: 8px;
@@ -182,7 +183,8 @@ body {
 }
 .ms-list label:hover { background: var(--bg); }
 .ms-list input { accent-color: var(--green); }
-.ms-actions { display: flex; justify-content: space-between; }
+.ms-actions { display: flex; align-items: center; gap: 2px; }
+.ms-actions .spacer { margin-left: auto; }
 
 .search {
   border: 1px solid var(--outline); border-radius: 4px;
