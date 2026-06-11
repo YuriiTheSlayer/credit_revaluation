@@ -323,6 +323,17 @@ td.name { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
   color: var(--muted); font-size: 11px;
 }
 
+/* единая карточка видов: таблица / срок и платёж / графики */
+.view-host { padding-top: 8px; }
+.view-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; min-height: 30px;
+}
+.table-meta {
+  font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted);
+}
+
 /* «Срок и платёж»: таблица третьего разреза */
 .avg-wrap { overflow: auto; max-height: 480px; border-radius: 4px; }
 .avg-table thead tr:nth-child(2) th {

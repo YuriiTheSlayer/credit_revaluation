@@ -74,27 +74,30 @@
 
     <section id="kpiRow" class="kpi-row"></section>
 
-    <section id="tableCard" class="card hidden">
-      <div class="card-head">
-        <h2 id="tableCaption">Таблица SKU</h2>
-        <div id="pager" class="pager hidden">
-          <button id="pagePrev" class="icon-btn">‹</button>
-          <span id="pageInfo" class="muted"></span>
-          <button id="pageNext" class="icon-btn">›</button>
+    <section id="viewsCard" class="card hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="table">Таблица SKU</button>
+        <button class="tab" data-tab="avg">Срок и платёж</button>
+        <button class="tab" data-tab="terms">Средний срок по категориям</button>
+        <button class="tab" data-tab="dev">Распределение отклонений</button>
+      </div>
+
+      <div id="viewTable" class="view-host">
+        <div class="view-meta">
+          <span id="tableCaption" class="table-meta">Таблица SKU</span>
+          <div id="pager" class="pager hidden">
+            <button id="pagePrev" class="icon-btn">‹</button>
+            <span id="pageInfo" class="muted"></span>
+            <button id="pageNext" class="icon-btn">›</button>
+          </div>
+        </div>
+        <p id="tableEmpty" class="muted hidden">Нет данных под текущие фильтры.</p>
+        <div class="table-wrap">
+          <table id="skuTable"><thead></thead><tbody></tbody></table>
         </div>
       </div>
-      <div class="table-wrap">
-        <table id="skuTable"><thead></thead><tbody></tbody></table>
-      </div>
-    </section>
 
-    <section id="chartsCard" class="card hidden">
-      <div class="tabs">
-        <button class="tab active" data-tab="terms">Средний срок по категориям</button>
-        <button class="tab" data-tab="dev">Распределение отклонений</button>
-        <button class="tab" data-tab="avg">Срок и платёж</button>
-      </div>
-      <div id="chartTerms" class="chart-host"></div>
+      <div id="chartTerms" class="chart-host hidden"></div>
       <div id="chartDev" class="chart-host hidden"></div>
       <div id="chartAvg" class="chart-host hidden"></div>
     </section>

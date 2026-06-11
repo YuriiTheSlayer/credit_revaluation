@@ -74,6 +74,7 @@ function render() {
 
   $("#emptyHint").classList.toggle("hidden", S.loaded);
   $("#filtersBar").classList.toggle("hidden", !S.loaded);
+  $("#viewsCard").classList.toggle("hidden", !S.loaded);
 
   renderBanks();
   renderWeight();
@@ -275,11 +276,15 @@ function renderKpi() {
 
 /* -------------------------------------------------------------- таблица */
 function renderTable() {
-  const card = $("#tableCard");
   const t = S.table;
-  const show = S.loaded && t && t.rows.length > 0;
-  card.classList.toggle("hidden", !show);
-  if (!show) return;
+  const hasRows = S.loaded && t && t.rows.length > 0;
+  $("#tableEmpty").classList.toggle("hidden", hasRows || !S.loaded);
+  $("#skuTable").classList.toggle("hidden", !hasRows);
+  if (!hasRows) {
+    $("#tableCaption").textContent = "Таблица SKU · 0 строк";
+    $("#pager").classList.add("hidden");
+    return;
+  }
 
   $("#tableCaption").textContent = `Таблица SKU · ${t.totalLabel} строк`;
   const pager = $("#pager");
@@ -342,10 +347,15 @@ function renderTable() {
 let hiddenSeries = new Set();   // ритейлеры, выключенные кликом по легенде
 
 function renderCharts() {
-  const card = $("#chartsCard");
-  const show = S.loaded && S.charts;
-  card.classList.toggle("hidden", !show);
-  if (!show) { hideTip(); return; }
+  if (!S.loaded) { hideTip(); return; }
+  if (!S.charts) {
+    const note = '<p class="muted">Нет данных под текущие фильтры.</p>';
+    $("#chartTerms").innerHTML = note;
+    $("#chartDev").innerHTML = note;
+    $("#chartAvg").innerHTML = note;
+    hideTip();
+    return;
+  }
   renderTermsChart($("#chartTerms"), S.charts.terms);
   renderDevChart($("#chartDev"), S.charts.dev);
   renderAvgView($("#chartAvg"), S.avgView);
@@ -781,10 +791,12 @@ function bindStatic() {
     tab.onclick = () => {
       document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
-      $("#chartTerms").classList.toggle("hidden", tab.dataset.tab !== "terms");
-      $("#chartDev").classList.toggle("hidden", tab.dataset.tab !== "dev");
-      $("#chartAvg").classList.toggle("hidden", tab.dataset.tab !== "avg");
-      if (S && S.charts) renderCharts();
+      const view = tab.dataset.tab;
+      $("#viewTable").classList.toggle("hidden", view !== "table");
+      $("#chartTerms").classList.toggle("hidden", view !== "terms");
+      $("#chartDev").classList.toggle("hidden", view !== "dev");
+      $("#chartAvg").classList.toggle("hidden", view !== "avg");
+      if (view !== "table" && S && S.loaded) renderCharts();
     };
   });
 }
