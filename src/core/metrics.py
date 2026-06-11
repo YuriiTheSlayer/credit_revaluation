@@ -102,6 +102,44 @@ def average_terms_and_payments(
     return pd.DataFrame(terms), pd.DataFrame(payments)
 
 
+def market_terms_and_payments(
+    wide: pd.DataFrame,
+    comp_cols: list[str],
+    by: str = "category",
+) -> tuple[pd.Series, pd.Series]:
+    """Сводный «рынок»: средний срок и платёж по всем конкурентам банка разом.
+
+    Наблюдение — пара SKU × конкурент с данными: каждый оффер конкурента
+    весит одинаково. Средний срок — среднее всех наблюдений категории;
+    средний платёж — средняя цена тех же наблюдений / средний срок
+    (цена SKU учитывается столько раз, у скольких конкурентов он есть, —
+    числитель и знаменатель по одной базе).
+
+    Возвращает (terms, payments): Series с индексом-категорией.
+    """
+    price = wide["price"].astype("Float64").astype(float)
+    parts = []
+    for col in comp_cols:
+        pay = wide[col].astype("Float64").astype(float)
+        mask = pay.notna()
+        if mask.any():
+            parts.append(pd.DataFrame({
+                "group": wide.loc[mask, by],
+                "pay": pay[mask],
+                "price": price[mask],
+            }))
+    if not parts:
+        empty = pd.Series(dtype=float)
+        return empty, empty
+    long = pd.concat(parts, ignore_index=True)
+    terms = long.groupby("group")["pay"].mean()
+    price_mean = long.groupby("group")["price"].mean()
+    payments = price_mean.divide(terms.where(terms > 0))
+    terms.index.name = by
+    payments.index.name = by
+    return terms, payments
+
+
 def win_share(wide: pd.DataFrame, by: str = "category") -> pd.Series:
     """Доля SKU, где Comfy ≥ лучшего конкурента (по выбранному банку).
 

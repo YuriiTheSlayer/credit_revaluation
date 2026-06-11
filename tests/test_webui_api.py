@@ -148,6 +148,7 @@ def test_avg_view_in_snapshot(api):
     view = snap["avgView"]
     assert view is not None
     assert view["retailers"][0]["name"] == "Comfy"
+    assert view["retailers"][1]["name"] == "Все конкуренты"
     assert view["overall"]["category"] == "Вся выборка"
     rows = {r["category"]: r for r in view["rows"]}
     row = rows["Пилосос традиційний"]
@@ -157,6 +158,8 @@ def test_avg_view_in_snapshot(api):
     assert row["payments"]["pay_comfy"] == pytest.approx(avg_price / 10)
     assert row["terms"]["pay::rozetka.com.ua"] == pytest.approx(3.5)
     assert row["payments"]["pay::rozetka.com.ua"] == pytest.approx(9599 / 3.5)
+    assert row["terms"]["__market__"] == pytest.approx(5.0)       # все конкуренты
+    assert row["payments"]["__market__"] == pytest.approx(9009 / 5)
     json.dumps(snap, allow_nan=False)
 
     # разрез следует за выбранным банком

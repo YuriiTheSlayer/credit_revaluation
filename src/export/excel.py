@@ -388,10 +388,13 @@ def _write_avg_sheet(
     """Третий разрез: средний срок и средний платёж (цена/срок) по категориям
     в разрезе выбранного банка; средние — простые, без весов (§10.10)."""
     ws = wb.add_worksheet(sheet_name)
-    retailers = [(PAY_COMFY, "Comfy")] + [
-        (pay_col(d), disp) for d, disp in competitor_names.items()
-    ]
-    pay_cols = [key for key, _ in retailers]
+    comp_retailers = [(pay_col(d), disp) for d, disp in competitor_names.items()]
+    retailers = [(PAY_COMFY, "Comfy")]
+    if comp_retailers:
+        retailers.append(("__market__", "Все конкуренты"))
+    retailers += comp_retailers
+    pay_cols = [PAY_COMFY] + [key for key, _ in comp_retailers]
+    comp_cols = [key for key, _ in comp_retailers]
 
     headers: list[tuple[str, str, int]] = [
         ("Категория", "header_left", 32),
@@ -421,6 +424,12 @@ def _write_avg_sheet(
     tmp["__all__"] = "all"
     terms_all, payments_all = metrics.average_terms_and_payments(
         tmp, pay_cols, by="__all__")
+    if comp_cols:
+        # сводный «рынок»: все конкуренты банка одной колонкой
+        terms["__market__"], payments["__market__"] = \
+            metrics.market_terms_and_payments(wide, comp_cols)
+        terms_all["__market__"], payments_all["__market__"] = \
+            metrics.market_terms_and_payments(tmp, comp_cols, by="__all__")
 
     counts = wide.groupby("category").size()
     price_mean = wide.groupby("category")["price"].mean()

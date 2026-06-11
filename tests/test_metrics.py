@@ -157,6 +157,29 @@ def test_average_terms_and_payments_fixture_values(kniga_path):
     assert row_p["pay::rozetka.com.ua"] == pytest.approx(9599 / 3.5)
 
 
+def test_market_terms_and_payments_pooled(kniga_path):
+    """Сводный «рынок»: наблюдение = пара SKU × конкурент с данными.
+
+    «Пилосос традиційний», Monobank: fox 6/6/6 (цены 6649/9599/9599)
+    + roz 3/4 (цены 9599/9599) → срок (6+6+6+3+4)/5 = 5,
+    платёж = ((6649+9599·4)/5) / 5 = 9009 / 5.
+    """
+    ds = Dataset(parse_competitors_csv(kniga_path))
+    wide = ds.wide("Monobank")
+    sub = wide[wide["category"] == "Пилосос традиційний"]
+    comp_cols = ["pay::foxtrot.com.ua", "pay::rozetka.com.ua"]
+    terms, payments = metrics.market_terms_and_payments(sub, comp_cols)
+
+    assert terms["Пилосос традиційний"] == pytest.approx(5.0)
+    assert payments["Пилосос традиційний"] == pytest.approx(9009 / 5)
+
+
+def test_market_terms_empty_without_competitors():
+    df = pd.DataFrame({"category": ["A"], "price": [100.0], "pay_x": [None]})
+    terms, payments = metrics.market_terms_and_payments(df, ["pay_x"])
+    assert terms.empty and payments.empty
+
+
 def test_average_payments_nan_without_data():
     df = pd.DataFrame({
         "category": ["A", "A"],

@@ -480,11 +480,18 @@ class Api:
         (цена/срок) по категориям в разрезе выбранного банка."""
         if not len(filtered):
             return None
+        comp_cols = [c for c in pay_cols if c != PAY_COMFY]
         terms, payments = metrics.average_terms_and_payments(filtered, pay_cols)
         tmp = filtered.copy()
         tmp["__all__"] = "all"
         terms_all, payments_all = metrics.average_terms_and_payments(
             tmp, pay_cols, by="__all__")
+        if comp_cols:
+            # сводный «рынок»: все конкуренты банка одной колонкой
+            terms["__market__"], payments["__market__"] = \
+                metrics.market_terms_and_payments(filtered, comp_cols)
+            terms_all["__market__"], payments_all["__market__"] = \
+                metrics.market_terms_and_payments(tmp, comp_cols, by="__all__")
 
         base_col = "sales" if self.dataset.has_sales else "price"
         order = (filtered.groupby("category")[base_col].sum()
@@ -492,19 +499,24 @@ class Api:
         counts = filtered.groupby("category").size()
         price_mean = filtered.groupby("category")["price"].mean()
 
+        view_keys = [PAY_COMFY] + (["__market__"] if comp_cols else []) + comp_cols
+
         def row(label, count, price, term_row, payment_row) -> dict:
             return {
                 "category": label,
                 "count": int(count),
                 "avgPrice": _val(price),
-                "terms": {k: _val(term_row.get(k)) for k in pay_cols},
-                "payments": {k: _val(payment_row.get(k)) for k in pay_cols},
+                "terms": {k: _val(term_row.get(k)) for k in view_keys},
+                "payments": {k: _val(payment_row.get(k)) for k in view_keys},
             }
 
+        retailers = [{"key": PAY_COMFY, "name": "Comfy"}]
+        if comp_cols:
+            retailers.append({"key": "__market__", "name": "Все конкуренты"})
+        retailers += [{"key": pay_col(d), "name": disp} for d, disp in names.items()]
+
         return {
-            "retailers": [{"key": PAY_COMFY, "name": "Comfy"}] + [
-                {"key": pay_col(d), "name": disp} for d, disp in names.items()
-            ],
+            "retailers": retailers,
             "overall": row("Вся выборка", len(filtered),
                            filtered["price"].mean(),
                            terms_all.iloc[0], payments_all.iloc[0]),

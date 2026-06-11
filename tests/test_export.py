@@ -259,3 +259,8 @@ def test_avg_sheet_terms_and_payments(tmp_path, kniga_path):
     # база цены rozetka — только SKU с её данными (9599, 9599)
     assert ws.cell(row=r, column=heads["Rozetka\nср. платёж, грн"]).value == \
         pytest.approx(9599 / 3.5)
+    # сводный «рынок» по всем конкурентам банка: 5 наблюдений
+    assert ws.cell(row=r, column=heads["Все конкуренты\nср. срок"]).value == \
+        pytest.approx(5.0)
+    assert ws.cell(row=r, column=heads["Все конкуренты\nср. платёж, грн"]).value == \
+        pytest.approx(9009 / 5)
