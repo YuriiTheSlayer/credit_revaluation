@@ -69,6 +69,15 @@ def _fmt_count(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _dialog_kind(kind: str):
+    """Тип файлового диалога: pywebview ≥6 — enum FileDialog, 5.x — константы."""
+    import webview
+    enum = getattr(webview, "FileDialog", None)
+    if enum is not None:
+        return enum.OPEN if kind == "open" else enum.SAVE
+    return webview.OPEN_DIALOG if kind == "open" else webview.SAVE_DIALOG
+
+
 class Api:
     """Состояние приложения + методы, экспонируемые в JS."""
 
@@ -113,10 +122,9 @@ class Api:
     def export(self, all_banks: bool = False) -> dict:
         if self.dataset is None:
             return self._with_error("Сначала загрузите CSV конкурентов.")
-        import webview
         filename = default_filename("all_banks" if all_banks else (self.bank or "bank"))
         path = self._window.create_file_dialog(
-            webview.SAVE_DIALOG, save_filename=filename,
+            _dialog_kind("save"), save_filename=filename,
             file_types=("Excel (*.xlsx)",),
         )
         if not path:
@@ -126,9 +134,8 @@ class Api:
         return self.export_to(str(path), all_banks)
 
     def _open_dialog(self, file_types: tuple[str, ...]) -> str | None:
-        import webview
         result = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, allow_multiple=False, file_types=file_types)
+            _dialog_kind("open"), allow_multiple=False, file_types=file_types)
         if not result:
             return None
         return result[0] if isinstance(result, (list, tuple)) else str(result)

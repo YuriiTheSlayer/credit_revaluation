@@ -43,6 +43,14 @@ def _fatal(message: str) -> None:
     raise SystemExit(1)
 
 
+def _pywebview_major() -> int:
+    try:
+        from importlib.metadata import version
+        return int(version("pywebview").split(".")[0])
+    except Exception:  # noqa: BLE001 — неизвестная версия не должна ронять запуск
+        return 0
+
+
 def main() -> None:
     api = Api()
     window = webview.create_window(
@@ -56,9 +64,10 @@ def main() -> None:
     )
     api.attach_window(window)
     kwargs = {}
-    if sys.platform == "win32":
-        # только современный движок: без тихого фолбэка на старый MSHTML (IE),
-        # который ломает оформление
+    if sys.platform == "win32" and _pywebview_major() < 6:
+        # pywebview 5.x: явно требуем современный движок, без тихого фолбэка
+        # на старый MSHTML (IE), который ломает оформление; в 6.x на Windows
+        # WebView2 — единственный бэкенд, параметр не нужен
         kwargs["gui"] = "edgechromium"
     try:
         webview.start(**kwargs)
